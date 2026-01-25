@@ -72,8 +72,12 @@ api = [
 ui = [
     "gradio>=4.0.0",
 ]
+data = [
+    "kaggle>=1.5.0",
+    "gdown>=4.7.0",
+]
 all = [
-    "verifai[dev,api,ui]",
+    "verifai[dev,api,ui,data]",
 ]
 
 [project.scripts]
