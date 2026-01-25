@@ -1,0 +1,132 @@
+# VerifAI Model Registry
+# =========================
+# This file defines available models and their configurations.
+# Models can be loaded from HuggingFace Hub or local paths.
+
+# Neural Detector Models
+neural_detectors:
+  # Vision Transformer (ViT) - Default
+  vit_base:
+    name: "ViT Base (Patch 16, 224)"
+    hf_model_id: "google/vit-base-patch16-224"
+    architecture: "vit"
+    input_size: [224, 224]
+    patch_size: 16
+    num_params: "86M"
+    description: "Base Vision Transformer, good balance of speed and accuracy"
+    default: true
+    
+  vit_large:
+    name: "ViT Large (Patch 16, 224)"
+    hf_model_id: "google/vit-large-patch16-224"
+    architecture: "vit"
+    input_size: [224, 224]
+    patch_size: 16
+    num_params: "304M"
+    description: "Larger ViT for higher accuracy, slower inference"
+    default: false
+
+  # ConvNeXt - CNN alternative
+  convnext_base:
+    name: "ConvNeXt Base"
+    hf_model_id: "facebook/convnext-base-224"
+    architecture: "convnext"
+    input_size: [224, 224]
+    num_params: "89M"
+    description: "Modern CNN architecture, efficient and accurate"
+    default: false
+    
+  convnext_tiny:
+    name: "ConvNeXt Tiny"
+    hf_model_id: "facebook/convnext-tiny-224"
+    architecture: "convnext"
+    input_size: [224, 224]
+    num_params: "29M"
+    description: "Lightweight CNN, fast inference"
+    default: false
+
+  # EfficientNet - Mobile/edge deployment
+  efficientnet_b0:
+    name: "EfficientNet B0"
+    hf_model_id: "google/efficientnet-b0"
+    architecture: "efficientnet"
+    input_size: [224, 224]
+    num_params: "5M"
+    description: "Smallest EfficientNet, best for edge deployment"
+    default: false
+
+  # Swin Transformer - Hierarchical ViT
+  swin_base:
+    name: "Swin Transformer Base"
+    hf_model_id: "microsoft/swin-base-patch4-window7-224"
+    architecture: "swin"
+    input_size: [224, 224]
+    patch_size: 4
+    window_size: 7
+    num_params: "88M"
+    description: "Hierarchical transformer with shifted windows"
+    default: false
+
+# Feature Extractors (for embeddings/anomaly detection)
+feature_extractors:
+  clip_vit_base:
+    name: "CLIP ViT Base"
+    hf_model_id: "openai/clip-vit-base-patch32"
+    architecture: "clip"
+    embedding_dim: 512
+    description: "CLIP vision encoder for robust embeddings"
+    
+  dinov2_base:
+    name: "DINOv2 Base"
+    hf_model_id: "facebook/dinov2-base"
+    architecture: "dinov2"
+    embedding_dim: 768
+    description: "Self-supervised vision features, excellent for anomaly detection"
+
+# Specialized AI Detection Models (fine-tuned)
+ai_detection_models:
+  # Placeholder for custom fine-tuned models
+  verifai_v1:
+    name: "VerifAI v1 (Custom)"
+    local_path: "checkpoints/verifai_v1.safetensors"
+    base_model: "vit_base"
+    description: "Custom fine-tuned model for AI detection"
+    available: false  # Set to true when trained
+
+# Model Selection Rules
+selection:
+  # Priority order for model selection
+  priority:
+    - "verifai_v1"  # Use custom model if available
+    - "vit_base"    # Default fallback
+  
+  # Device-specific recommendations
+  device_recommendations:
+    cpu:
+      recommended: "convnext_tiny"
+      reason: "Efficient inference on CPU"
+    cuda:
+      recommended: "vit_base"
+      reason: "Good balance for GPU"
+    mps:
+      recommended: "convnext_base"
+      reason: "Optimized for Apple Silicon"
+
+# Training Configuration (for future fine-tuning)
+training:
+  # Base model to fine-tune
+  base_model: "vit_base"
+  # Learning rate
+  learning_rate: 1.0e-4
+  # Weight decay
+  weight_decay: 0.01
+  # Warmup steps
+  warmup_steps: 500
+  # Max epochs
+  max_epochs: 10
+  # Early stopping patience
+  patience: 3
+  # Gradient accumulation steps
+  gradient_accumulation: 4
+  # Mixed precision training
+  fp16: true

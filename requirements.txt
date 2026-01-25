@@ -1,0 +1,33 @@
+# VerifAI Requirements
+# Install with: pip install -r requirements.txt
+# For development: pip install -e ".[dev]"
+
+# Core ML
+torch>=2.0.0
+torchvision>=0.15.0
+transformers>=4.35.0
+datasets>=2.14.0
+accelerate>=0.24.0
+safetensors>=0.4.0
+
+# Image/Video Processing
+opencv-python>=4.8.0
+Pillow>=10.0.0
+imageio>=2.31.0
+imageio-ffmpeg>=0.4.9
+
+# Scientific Computing
+numpy>=1.24.0
+scipy>=1.11.0
+scikit-learn>=1.3.0
+pandas>=2.0.0
+
+# Configuration & CLI
+pyyaml>=6.0
+click>=8.1.0
+rich>=13.0.0
+
+# Utilities
+tqdm>=4.65.0
+loguru>=0.7.0
+python-dotenv>=1.0.0

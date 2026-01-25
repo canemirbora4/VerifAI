@@ -1,0 +1,125 @@
+# VerifAI Default Configuration
+# ================================
+# This file contains default settings for the VerifAI detection pipeline.
+# Override these settings by creating a local config file or via CLI arguments.
+
+# General Settings
+general:
+  # Device for inference: "auto", "cuda", "mps", "cpu"
+  device: "auto"
+  # Number of worker threads for data loading
+  num_workers: 4
+  # Random seed for reproducibility
+  seed: 42
+  # Logging level: DEBUG, INFO, WARNING, ERROR
+  log_level: "INFO"
+
+# Image Processing Settings
+image:
+  # Supported input formats
+  supported_formats:
+    - ".jpg"
+    - ".jpeg"
+    - ".png"
+    - ".webp"
+    - ".bmp"
+  # Target size for model input (height, width)
+  target_size: [224, 224]
+  # Normalization settings (ImageNet defaults)
+  normalize:
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]
+  # Maximum image dimension before resize (for memory management)
+  max_dimension: 4096
+
+# Video Processing Settings
+video:
+  # Supported input formats
+  supported_formats:
+    - ".mp4"
+    - ".avi"
+    - ".mov"
+    - ".mkv"
+    - ".webm"
+  # Frame sampling strategy: "uniform", "keyframe", "all"
+  sampling_strategy: "uniform"
+  # Number of frames to sample (for uniform strategy)
+  num_frames: 16
+  # Maximum frames to process (safety limit)
+  max_frames: 1000
+  # Target FPS for processing (null = use original)
+  target_fps: null
+
+# Neural Detector Settings
+neural_detector:
+  # Model identifier (HuggingFace model hub or local path)
+  model_name: "google/vit-base-patch16-224"
+  # Whether to use pretrained weights
+  pretrained: true
+  # Number of classes (2 for binary: real vs AI)
+  num_classes: 2
+  # Class labels
+  labels:
+    0: "real"
+    1: "ai_generated"
+  # Batch size for inference
+  batch_size: 8
+  # Enable mixed precision inference
+  fp16: true
+  # Confidence threshold for classification
+  threshold: 0.5
+
+# Ensemble Settings (for future phases)
+ensemble:
+  # Enabled detectors
+  detectors:
+    neural: true
+    frequency: false  # Phase 2
+    prnu: false       # Phase 5
+    provenance: false # Phase 5
+  # Fusion method: "average", "weighted", "learned"
+  fusion_method: "average"
+  # Weights for weighted fusion (must sum to 1.0)
+  weights:
+    neural: 1.0
+    frequency: 0.0
+    prnu: 0.0
+    provenance: 0.0
+
+# Calibration Settings
+calibration:
+  # Calibration method: "isotonic", "platt", "none"
+  method: "isotonic"
+  # Whether calibration is enabled
+  enabled: true
+
+# Output Settings
+output:
+  # Output format: "json", "yaml", "text"
+  format: "json"
+  # Include detailed evidence in output
+  include_evidence: true
+  # Include raw scores (before calibration)
+  include_raw_scores: false
+  # Save heatmaps for images
+  save_heatmaps: true
+  # Heatmap output directory (relative to input file)
+  heatmap_dir: "verifai_output"
+
+# Evaluation Settings
+evaluation:
+  # Metrics to compute
+  metrics:
+    - "accuracy"
+    - "precision"
+    - "recall"
+    - "f1"
+    - "roc_auc"
+    - "pr_auc"
+    - "ece"  # Expected Calibration Error
+  # Number of bins for calibration plots
+  calibration_bins: 10
+  # Generate plots
+  generate_plots: true
+  # Report output format
+  report_format: "markdown"

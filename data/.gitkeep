@@ -1,0 +1,8 @@
+# Data directory
+# Place datasets and sample files here
+# 
+# Suggested structure:
+# data/
+# ├── samples/          # Sample images for testing
+# ├── datasets/         # Downloaded/prepared datasets
+# └── raw/              # Raw unprocessed data
