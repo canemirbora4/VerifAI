@@ -177,6 +177,11 @@ data/datasets/*.arrow
 *.h5
 *.hdf5
 
+
+data/*
+data/*.zip
+data/*.tar.gz
+
 # Output and results
 outputs/
 results/
