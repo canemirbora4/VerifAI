@@ -283,10 +283,10 @@ pytest -m "not slow"
 - [x] Heatmap generation
 
 ### Phase 3 Robustness Evaluation
-- [ ] Corruption harness (JPEG, resize, blur)
-- [ ] Robustness curves
-- [ ] Benchmark reports
-- [ ] Cross-generator evaluation
+- [x] Corruption harness (JPEG, resize, blur)
+- [x] Robustness curves
+- [x] Benchmark reports
+- [x] Cross-generator evaluation
 
 ### Phase 4 Video Pipeline
 - [ ] Video frame extraction

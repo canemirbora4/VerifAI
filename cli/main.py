@@ -505,6 +505,197 @@ def evaluate(input_path: str, output: Optional[str]) -> None:
         console.print(f"\n[green]Report saved to {report_path}[/green]")
 
 
+@cli.command()
+@click.argument("input_path", type=click.Path(exists=True))
+@click.option(
+    "-o", "--output",
+    type=click.Path(),
+    default="benchmark_results",
+    help="Output directory for benchmark report",
+)
+@click.option(
+    "--corruptions",
+    type=str,
+    default="jpeg,resize,blur,noise",
+    help="Comma-separated list of corruptions to test",
+)
+@click.option(
+    "--severities",
+    type=str,
+    default="0.0,0.2,0.4,0.6,0.8,1.0",
+    help="Comma-separated severity levels",
+)
+@click.option(
+    "--max-samples",
+    type=int,
+    default=None,
+    help="Maximum samples per class (for faster testing)",
+)
+@click.option(
+    "--quick",
+    is_flag=True,
+    help="Run quick benchmark (fewer corruptions and severities)",
+)
+@click.pass_context
+def benchmark(
+    ctx: click.Context,
+    input_path: str,
+    output: str,
+    corruptions: str,
+    severities: str,
+    max_samples: Optional[int],
+    quick: bool,
+) -> None:
+    """
+    Run robustness benchmark on a dataset.
+    
+    Tests detector performance under various image corruptions
+    (JPEG compression, resize, blur, noise) and generates a report.
+    
+    INPUT_PATH should be a directory with 'real' and 'ai_generated' subdirs.
+    
+    \b
+    Examples:
+        verifai benchmark data/test/ --output reports/
+        verifai benchmark data/test/ --quick
+        verifai benchmark data/test/ --corruptions jpeg,resize --max-samples 50
+    """
+    from verifai import VerifAI
+    from verifai.eval import (
+        Benchmark,
+        BenchmarkConfig,
+        CorruptionType,
+    )
+    
+    path = Path(input_path)
+    output_path = Path(output)
+    
+    # Check directory structure
+    real_dir = path / "real"
+    ai_dir = path / "ai_generated"
+    
+    if not real_dir.exists() or not ai_dir.exists():
+        console.print(
+            "[red]Expected directory structure not found![/red]\n"
+            "Please organize your data as:\n"
+            "  dataset/\n"
+            "  ├── real/\n"
+            "  └── ai_generated/"
+        )
+        sys.exit(1)
+    
+    # Parse corruptions
+    corruption_map = {
+        "jpeg": CorruptionType.JPEG_COMPRESSION,
+        "resize": CorruptionType.RESIZE,
+        "blur": CorruptionType.GAUSSIAN_BLUR,
+        "noise": CorruptionType.GAUSSIAN_NOISE,
+        "crop": CorruptionType.CROP,
+        "brightness": CorruptionType.BRIGHTNESS,
+        "contrast": CorruptionType.CONTRAST,
+        "screenshot": CorruptionType.SCREENSHOT,
+    }
+    
+    if quick:
+        corruption_types = [CorruptionType.JPEG_COMPRESSION, CorruptionType.RESIZE]
+        severity_levels = [0.0, 0.5, 1.0]
+        max_samples = max_samples or 50
+    else:
+        corruption_types = []
+        for c in corruptions.split(","):
+            c = c.strip().lower()
+            if c in corruption_map:
+                corruption_types.append(corruption_map[c])
+            else:
+                console.print(f"[yellow]Unknown corruption: {c}[/yellow]")
+        
+        severity_levels = [float(s.strip()) for s in severities.split(",")]
+    
+    if not corruption_types:
+        corruption_types = [CorruptionType.JPEG_COMPRESSION, CorruptionType.RESIZE]
+    
+    # Create config
+    config = BenchmarkConfig(
+        name="verifai_benchmark",
+        corruption_types=corruption_types,
+        severity_levels=severity_levels,
+        num_samples=max_samples,
+        include_clean=True,
+    )
+    
+    console.print(Panel(
+        f"[bold]Corruptions:[/bold] {', '.join(c.value for c in corruption_types)}\n"
+        f"[bold]Severities:[/bold] {severity_levels}\n"
+        f"[bold]Max samples:[/bold] {max_samples or 'all'}",
+        title="[bold blue]Benchmark Configuration[/bold blue]",
+        border_style="blue",
+    ))
+    
+    # Initialize detector
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=True,
+    ) as progress:
+        progress.add_task("Loading VerifAI model...", total=None)
+        detector = VerifAI()
+        detector.load()
+    
+    # Run benchmark
+    console.print("\n[bold]Running benchmark...[/bold]\n")
+    
+    bench = Benchmark(detector, config)
+    
+    try:
+        results = bench.run(path, progress=True)
+    except Exception as e:
+        console.print(f"[red]Benchmark failed: {e}[/red]")
+        if ctx.obj.get("verbose"):
+            raise
+        sys.exit(1)
+    
+    # Display summary
+    console.print("\n")
+    
+    summary_lines = []
+    if results.clean_metrics:
+        summary_lines.append(f"[bold]Clean Performance:[/bold]")
+        summary_lines.append(f"  ROC-AUC: {results.clean_metrics.roc_auc:.4f}")
+        summary_lines.append(f"  Accuracy: {results.clean_metrics.accuracy:.4f}")
+        summary_lines.append("")
+    
+    summary_lines.append("[bold]Robustness (AUC at max severity):[/bold]")
+    for ctype, robustness in results.robustness_results.items():
+        clean_auc = robustness.auc_by_severity[0]
+        worst_auc = robustness.auc_by_severity[-1]
+        degradation = robustness.auc_degradation
+        
+        if degradation < 0.1:
+            status = "[green]✓[/green]"
+        elif degradation < 0.2:
+            status = "[yellow]⚠[/yellow]"
+        else:
+            status = "[red]✗[/red]"
+        
+        summary_lines.append(
+            f"  {ctype}: {clean_auc:.3f} → {worst_auc:.3f} "
+            f"(Δ={degradation:.3f}) {status}"
+        )
+    
+    console.print(Panel(
+        "\n".join(summary_lines),
+        title="[bold]Benchmark Results[/bold]",
+        border_style="green",
+    ))
+    
+    # Generate report
+    report_path = bench.generate_report(results, output_path)
+    
+    console.print(f"\n[green]Report saved to {report_path}[/green]")
+    console.print(f"[dim]JSON results: {output_path / 'verifai_benchmark_results.json'}[/dim]")
+
+
 def main():
     """Main entry point."""
     cli()
