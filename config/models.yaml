@@ -67,6 +67,48 @@ neural_detectors:
     description: "Hierarchical transformer with shifted windows"
     default: false
 
+# ============================================================================
+# CLIP-based Detectors (RECOMMENDED)
+# ============================================================================
+# CLIP models provide better cross-generator generalization because they are
+# trained on 400M+ diverse internet images. The backbone is frozen, only the
+# classification head is trained.
+
+clip_detectors:
+  # RECOMMENDED: Best cross-generator performance
+  clip_vit_large:
+    name: "CLIP ViT-L/14 (Recommended)"
+    hf_model_id: "openai/clip-vit-large-patch14"
+    architecture: "clip"
+    input_size: [224, 224]
+    embedding_dim: 768
+    num_params: "428M"
+    trainable_params: "~400K"  # Only classification head
+    description: |
+      CLIP ViT-L/14 with frozen backbone + trainable MLP head.
+      Best choice for cross-generator generalization.
+      Distribution-aware, doesn't overfit to specific generator fingerprints.
+    head_config:
+      hidden_dims: [512, 256]
+      dropout: 0.3
+    recommended: true
+    default: true
+    
+  clip_vit_base:
+    name: "CLIP ViT-B/32 (Faster)"
+    hf_model_id: "openai/clip-vit-base-patch32"
+    architecture: "clip"
+    input_size: [224, 224]
+    embedding_dim: 512
+    num_params: "151M"
+    trainable_params: "~300K"
+    description: "Smaller CLIP model, faster inference but slightly lower accuracy"
+    head_config:
+      hidden_dims: [256, 128]
+      dropout: 0.3
+    recommended: false
+    default: false
+
 # Feature Extractors (for embeddings/anomaly detection)
 feature_extractors:
   clip_vit_base:
@@ -121,40 +163,58 @@ ai_detection_models:
 selection:
   # Priority order for model selection
   priority:
-    - "verifai_v1"              # Use custom model if available
-    - "umm_maybe_ai_detector"   # Pre-trained AI detector (RECOMMENDED)
+    - "clip_vit_large"          # CLIP ViT-L/14 (BEST cross-generator performance)
+    - "verifai_v1"              # Custom fine-tuned model if available
+    - "umm_maybe_ai_detector"   # Pre-trained AI detector (fallback)
     - "vit_base"                # Default fallback (needs fine-tuning)
   
   # Default model for AI detection
-  default_ai_detector: "umm-maybe/AI-image-detector"
+  default_ai_detector: "openai/clip-vit-large-patch14"  # CLIP recommended
+  default_legacy_detector: "umm-maybe/AI-image-detector"  # Legacy option
   
   # Device-specific recommendations
   device_recommendations:
     cpu:
-      recommended: "umm_maybe_ai_detector"
-      reason: "Pre-trained, works well on CPU"
+      recommended: "clip_vit_base"
+      reason: "Smaller CLIP, works well on CPU"
     cuda:
-      recommended: "umm_maybe_ai_detector"
-      reason: "Pre-trained, fast on GPU"
+      recommended: "clip_vit_large"
+      reason: "Full CLIP ViT-L/14, best accuracy on GPU"
     mps:
-      recommended: "umm_maybe_ai_detector"
-      reason: "Pre-trained, optimized for Apple Silicon"
+      recommended: "clip_vit_large"
+      reason: "CLIP ViT-L/14, optimized for Apple Silicon"
 
-# Training Configuration (for future fine-tuning)
+# Training Configuration
 training:
-  # Base model to fine-tune
-  base_model: "vit_base"
-  # Learning rate
-  learning_rate: 1.0e-4
-  # Weight decay
-  weight_decay: 0.01
-  # Warmup steps
-  warmup_steps: 500
-  # Max epochs
-  max_epochs: 10
-  # Early stopping patience
-  patience: 3
-  # Gradient accumulation steps
-  gradient_accumulation: 4
-  # Mixed precision training
-  fp16: true
+  # CLIP Head Training (RECOMMENDED)
+  clip_head:
+    # Only train the classification head, CLIP backbone is frozen
+    backbone: "openai/clip-vit-large-patch14"
+    freeze_backbone: true
+    head_hidden_dims: [512, 256]
+    head_dropout: 0.3
+    # Training params
+    learning_rate: 1.0e-3  # Higher LR since only head is trained
+    weight_decay: 1.0e-4
+    max_epochs: 10
+    batch_size: 32
+    # Data augmentation
+    augmentation:
+      random_crop: true
+      random_flip: true
+      color_jitter: 0.1
+      jpeg_compression: [70, 100]  # Augment with JPEG artifacts
+    # Checkpointing
+    save_best: true
+    checkpoint_dir: "checkpoints/clip_head"
+  
+  # Legacy ViT fine-tuning (full model)
+  legacy_vit:
+    base_model: "vit_base"
+    learning_rate: 1.0e-4
+    weight_decay: 0.01
+    warmup_steps: 500
+    max_epochs: 10
+    patience: 3
+    gradient_accumulation: 4
+    fp16: true

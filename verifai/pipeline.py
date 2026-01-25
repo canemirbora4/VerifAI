@@ -26,7 +26,7 @@ from verifai.ingest import (
     get_media_type,
     MediaType,
 )
-from verifai.models import NeuralDetector, FrequencyDetector, DetectorOutput
+from verifai.models import NeuralDetector, CLIPDetector, FrequencyDetector, DetectorOutput
 from verifai.models.base import Label
 from verifai.features import (
     MetadataParser,
@@ -243,37 +243,45 @@ class VerifAI:
     Main VerifAI pipeline for AI-generated media detection.
     
     This pipeline combines multiple detection signals:
-    - Neural detector (ViT-based)
+    - CLIP detector (CLIP ViT-L/14 frozen backbone + trainable head) - RECOMMENDED
+    - Neural detector (legacy ViT-based, optional)
     - Frequency detector (FFT/DCT-based)
     - Metadata analysis (EXIF/provenance)
     - PRNU analysis (camera sensor fingerprinting)
     - Provenance analysis (C2PA/Content Credentials)
     
+    The CLIP-based detector provides better cross-generator generalization
+    because CLIP is trained on 400M+ diverse internet images and captures
+    both semantic and low-level texture information without overfitting
+    to specific generator fingerprints.
+    
     The outputs are combined via ensemble fusion and optionally calibrated.
     
     Usage:
-        >>> detector = VerifAI()
+        >>> detector = VerifAI()  # Uses CLIP by default
         >>> result = detector.detect("image.jpg")
         >>> print(result.confidence, result.label)
         
-    Or with custom configuration:
+    With CLIP head training:
+        >>> detector = VerifAI(clip_head_path="checkpoints/clip_head.pt")
+        
+    Legacy mode (not recommended):
         >>> detector = VerifAI(
-        ...     model_name="google/vit-large-patch16-224",
-        ...     use_frequency=True,
-        ...     use_metadata=True,
-        ...     use_prnu=True,
-        ...     use_provenance=True,
-        ...     calibration_method="isotonic",
+        ...     use_clip=False,
+        ...     model_name="umm-maybe/AI-image-detector",
         ... )
     """
     
     def __init__(
         self,
-        model_name: str = "google/vit-base-patch16-224",
+        model_name: str = "openai/clip-vit-large-patch14",  # CLIP by default
         device: Optional[str] = None,
         threshold: float = 0.5,
         fp16: bool = True,
         auto_load: bool = True,
+        # CLIP vs Legacy mode
+        use_clip: bool = True,  # NEW: Use CLIP backbone (recommended)
+        clip_head_path: Optional[str] = None,  # Path to trained CLIP head weights
         # Ensemble settings
         use_frequency: bool = True,
         use_metadata: bool = True,
@@ -296,6 +304,8 @@ class VerifAI:
             threshold: Classification threshold
             fp16: Use FP16 inference (faster on GPU)
             auto_load: Automatically load models on first detection
+            use_clip: Use CLIP ViT-L/14 as neural backbone (RECOMMENDED)
+            clip_head_path: Path to trained CLIP classification head weights
             use_frequency: Enable frequency-based detection
             use_metadata: Enable metadata analysis
             use_prnu: Enable PRNU (camera sensor noise) analysis
@@ -309,6 +319,7 @@ class VerifAI:
         self.model_name = model_name
         self.threshold = threshold
         self.auto_load = auto_load
+        self.use_clip = use_clip
         self.use_frequency = use_frequency
         self.use_metadata = use_metadata
         self.use_prnu = use_prnu
@@ -320,13 +331,25 @@ class VerifAI:
         self._video_loader = VideoLoader()
         self._temporal_analyzer = TemporalAnalyzer()
         
-        # Neural detector
-        self._neural_detector = NeuralDetector(
-            model_name=model_name,
-            device=device,
-            threshold=threshold,
-            fp16=fp16,
-        )
+        # Neural detector - CLIP (recommended) or legacy ViT
+        if use_clip:
+            # CLIP ViT-L/14 with frozen backbone + trainable head
+            self._neural_detector = CLIPDetector(
+                model_name=model_name if "clip" in model_name.lower() else "openai/clip-vit-large-patch14",
+                device=device,
+                threshold=threshold,
+                head_weights_path=clip_head_path,
+            )
+            logger.info("Using CLIP ViT-L/14 detector (recommended for cross-generator generalization)")
+        else:
+            # Legacy ViT-based detector
+            self._neural_detector = NeuralDetector(
+                model_name=model_name,
+                device=device,
+                threshold=threshold,
+                fp16=fp16,
+            )
+            logger.info("Using legacy NeuralDetector (consider use_clip=True for better generalization)")
         
         # Frequency detector (optional)
         self._frequency_detector = None
