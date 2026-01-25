@@ -18,10 +18,17 @@ import numpy as np
 from PIL import Image
 from loguru import logger
 
-from verifai.ingest import ImageLoader, validate_file_path, get_media_type, MediaType
+from verifai.ingest import (
+    ImageLoader,
+    VideoLoader,
+    VideoData,
+    validate_file_path,
+    get_media_type,
+    MediaType,
+)
 from verifai.models import NeuralDetector, FrequencyDetector, DetectorOutput
 from verifai.models.base import Label
-from verifai.features import MetadataParser, parse_metadata
+from verifai.features import MetadataParser, parse_metadata, TemporalAnalyzer, TemporalFeatures
 from verifai.fusion import (
     Ensemble,
     EnsembleConfig,
@@ -30,6 +37,16 @@ from verifai.fusion import (
     Explainer,
     create_metadata_detector_output,
 )
+
+
+@dataclass
+class FrameScore:
+    """Score for a single video frame."""
+    frame_number: int
+    timestamp: float
+    score: float
+    is_suspicious: bool = False
+    label: str = "unknown"
 
 
 @dataclass
@@ -72,6 +89,13 @@ class DetectionResult:
     # Ensemble info
     fusion_method: Optional[str] = None
     detector_weights: dict[str, float] = field(default_factory=dict)
+    
+    # Video-specific fields
+    frame_scores: list[FrameScore] = field(default_factory=list)
+    suspicious_frames: list[int] = field(default_factory=list)
+    temporal_consistency: Optional[float] = None
+    video_duration: Optional[float] = None
+    num_frames_analyzed: int = 0
     
     # Additional metadata
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -122,6 +146,25 @@ class DetectionResult:
         if self.heatmap is not None:
             result["has_heatmap"] = True
         
+        # Include video-specific info
+        if self.input_type == "video":
+            result["video"] = {
+                "duration": self.video_duration,
+                "frames_analyzed": self.num_frames_analyzed,
+                "suspicious_frames": self.suspicious_frames,
+                "temporal_consistency": round(self.temporal_consistency, 4) if self.temporal_consistency else None,
+            }
+            if self.frame_scores:
+                result["video"]["frame_scores"] = [
+                    {
+                        "frame": fs.frame_number,
+                        "timestamp": round(fs.timestamp, 2),
+                        "score": round(fs.score, 4),
+                        "suspicious": fs.is_suspicious,
+                    }
+                    for fs in self.frame_scores
+                ]
+        
         return result
     
     def to_json(self, indent: int = 2) -> str:
@@ -131,11 +174,12 @@ class DetectionResult:
     def summary(self) -> str:
         """Generate a human-readable summary."""
         label_emoji = "🤖" if self.is_ai_generated else "📷"
+        media_emoji = "🎬" if self.input_type == "video" else "🖼️"
         confidence_bar = "█" * int(self.confidence * 10) + "░" * (10 - int(self.confidence * 10))
         
         lines = [
             "─" * 50,
-            f"  VerifAI Detection Result",
+            f"  VerifAI Detection Result {media_emoji}",
             "─" * 50,
             f"  {label_emoji} Verdict: {self.label.upper()}",
             f"  Confidence: [{confidence_bar}] {self.confidence:.1%}",
@@ -152,6 +196,25 @@ class DetectionResult:
             lines.append(f"  Size: {self.input_size[0]}×{self.input_size[1]}")
         if self.processing_time_ms > 0:
             lines.append(f"  Time: {self.processing_time_ms:.0f}ms")
+        
+        # Video-specific info
+        if self.input_type == "video":
+            lines.append("─" * 50)
+            lines.append("  Video Analysis:")
+            if self.video_duration:
+                lines.append(f"    Duration: {self.video_duration:.1f}s")
+            if self.num_frames_analyzed:
+                lines.append(f"    Frames analyzed: {self.num_frames_analyzed}")
+            if self.temporal_consistency is not None:
+                tc_bar = "█" * int(self.temporal_consistency * 10) + "░" * (10 - int(self.temporal_consistency * 10))
+                lines.append(f"    Temporal consistency: [{tc_bar}] {self.temporal_consistency:.1%}")
+            if self.suspicious_frames:
+                lines.append(f"    Suspicious frames: {len(self.suspicious_frames)}")
+                # Show first few suspicious frame numbers
+                frame_list = ", ".join(str(f) for f in self.suspicious_frames[:5])
+                if len(self.suspicious_frames) > 5:
+                    frame_list += f", ... (+{len(self.suspicious_frames) - 5} more)"
+                lines.append(f"      Frames: {frame_list}")
         
         # Detector breakdown
         if self.detector_scores:
@@ -235,6 +298,8 @@ class VerifAI:
         
         # Initialize components
         self._image_loader = ImageLoader()
+        self._video_loader = VideoLoader()
+        self._temporal_analyzer = TemporalAnalyzer()
         
         # Neural detector
         self._neural_detector = NeuralDetector(
@@ -358,9 +423,6 @@ class VerifAI:
                 input_type = "image"
             elif media_type == MediaType.VIDEO:
                 input_type = "video"
-                raise NotImplementedError(
-                    "Video detection not yet implemented. Coming in Phase 4!"
-                )
             else:
                 raise ValueError(f"Unsupported media type: {path.suffix}")
         else:
@@ -369,6 +431,11 @@ class VerifAI:
         # Process based on type
         if input_type == "image":
             result = self._detect_image(
+                source,
+                return_evidence=return_evidence,
+            )
+        elif input_type == "video":
+            result = self._detect_video(
                 source,
                 return_evidence=return_evidence,
             )
@@ -501,6 +568,178 @@ class VerifAI:
                 result.evidence["suspicious_regions"] = explanation.suspicious_regions
             except Exception as e:
                 logger.warning(f"Heatmap generation failed: {e}")
+        
+        return result
+    
+    def _detect_video(
+        self,
+        source: Union[str, Path],
+        num_frames: int = 16,
+        return_evidence: bool = False,
+    ) -> DetectionResult:
+        """
+        Run detection on a video using frame-level analysis and temporal aggregation.
+        
+        Args:
+            source: Video file path
+            num_frames: Number of frames to sample
+            return_evidence: Include detailed evidence
+            
+        Returns:
+            DetectionResult with video-specific data
+        """
+        # Load video and extract frames
+        video_data = self._video_loader.load(
+            source,
+            num_frames=num_frames,
+            strategy="uniform",
+            preprocess=True,
+        )
+        
+        logger.info(
+            f"Analyzing video: {video_data.metadata.duration:.1f}s, "
+            f"{len(video_data.frames)} frames"
+        )
+        
+        # Collect per-frame scores
+        frame_scores_list = []
+        all_detector_scores = {"neural": [], "frequency": [], "metadata": []}
+        
+        for frame in video_data.frames:
+            # Run detectors on each frame
+            frame_detector_outputs = {}
+            
+            # Neural detector
+            neural_output = self._neural_detector.detect(
+                frame.tensor,
+                return_features=False,
+                return_evidence=False,
+            )
+            frame_detector_outputs["neural"] = neural_output
+            all_detector_scores["neural"].append(neural_output.ai_probability)
+            
+            # Frequency detector
+            if self._frequency_detector:
+                freq_output = self._frequency_detector.detect(
+                    frame.tensor,
+                    return_features=False,
+                    return_evidence=False,
+                )
+                frame_detector_outputs["frequency"] = freq_output
+                all_detector_scores["frequency"].append(freq_output.ai_probability)
+            
+            # Ensemble frame-level scores
+            frame_ensemble = self._ensemble.fuse(frame_detector_outputs)
+            frame_score = frame_ensemble.final_score
+            
+            # Determine if frame is suspicious
+            is_suspicious = frame_score >= self.threshold
+            frame_label = "ai_generated" if is_suspicious else "real"
+            
+            frame_scores_list.append(FrameScore(
+                frame_number=frame.frame_number,
+                timestamp=frame.timestamp,
+                score=frame_score,
+                is_suspicious=is_suspicious,
+                label=frame_label,
+            ))
+        
+        # Temporal analysis on frame images
+        temporal_features = self._temporal_analyzer.analyze(video_data.images)
+        
+        # Aggregate scores across frames
+        frame_score_values = [fs.score for fs in frame_scores_list]
+        
+        # Different aggregation strategies
+        mean_score = float(np.mean(frame_score_values))
+        max_score = float(np.max(frame_score_values))
+        
+        # Weighted aggregation: higher weight to suspicious frames
+        weights = [1.5 if fs.is_suspicious else 1.0 for fs in frame_scores_list]
+        weighted_score = float(np.average(frame_score_values, weights=weights))
+        
+        # Final score considers both frame scores and temporal consistency
+        # Lower temporal consistency increases suspicion
+        temporal_penalty = (1.0 - temporal_features.consistency_score) * 0.1
+        final_score = min(1.0, weighted_score + temporal_penalty)
+        
+        # Apply calibration if available
+        raw_score = final_score
+        calibrated = False
+        if self._calibrator and self._calibrator.is_fitted:
+            final_score = self._calibrator.calibrate(final_score)
+            calibrated = True
+        
+        # Determine final label
+        if final_score >= self.threshold:
+            final_label = Label.AI_GENERATED
+        else:
+            final_label = Label.REAL
+        
+        # Find suspicious frames
+        suspicious_frames = [
+            fs.frame_number for fs in frame_scores_list
+            if fs.is_suspicious
+        ]
+        
+        # Also add temporally suspicious frames
+        for tf_idx in temporal_features.suspicious_frames:
+            if tf_idx < len(frame_scores_list):
+                if frame_scores_list[tf_idx].frame_number not in suspicious_frames:
+                    suspicious_frames.append(frame_scores_list[tf_idx].frame_number)
+        
+        suspicious_frames = sorted(set(suspicious_frames))
+        
+        # Build detector scores (averaged across frames)
+        avg_detector_scores = {}
+        for detector_name, scores in all_detector_scores.items():
+            if scores:
+                avg_detector_scores[detector_name] = float(np.mean(scores))
+        
+        # Add temporal score as a virtual detector
+        avg_detector_scores["temporal"] = 1.0 - temporal_features.consistency_score
+        
+        # Build result
+        result = DetectionResult(
+            label=final_label.value,
+            confidence=final_score,
+            is_ai_generated=final_label == Label.AI_GENERATED,
+            detector_scores=avg_detector_scores,
+            raw_score=raw_score,
+            calibrated=calibrated,
+            input_size=video_data.metadata.resolution,
+            fusion_method="temporal_weighted",
+            detector_weights=self._ensemble.config.weights,
+            frame_scores=frame_scores_list,
+            suspicious_frames=suspicious_frames,
+            temporal_consistency=temporal_features.consistency_score,
+            video_duration=video_data.metadata.duration,
+            num_frames_analyzed=len(video_data.frames),
+            metadata={
+                "fps": video_data.metadata.fps,
+                "total_frames": video_data.metadata.total_frames,
+                "codec": video_data.metadata.codec,
+                "sampling_strategy": video_data.sampling_strategy,
+            },
+        )
+        
+        # Add evidence if requested
+        if return_evidence:
+            evidence = {
+                "temporal": temporal_features.to_dict(),
+                "frame_analysis": {
+                    "mean_score": mean_score,
+                    "max_score": max_score,
+                    "weighted_score": weighted_score,
+                    "score_variance": float(np.var(frame_score_values)),
+                    "suspicious_ratio": len(suspicious_frames) / len(frame_scores_list),
+                },
+                "aggregation": {
+                    "method": "temporal_weighted",
+                    "temporal_penalty": temporal_penalty,
+                },
+            }
+            result.evidence = evidence
         
         return result
     

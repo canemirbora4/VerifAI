@@ -142,19 +142,20 @@ def detect(
         console.print(f"[red]Invalid path: {input_path}[/red]")
         sys.exit(1)
     
-    # Filter to only images for now (video coming in Phase 4)
+    # Separate images and videos
     image_files = [f for f in files if get_media_type(f) == MediaType.IMAGE]
     video_files = [f for f in files if get_media_type(f) == MediaType.VIDEO]
+    all_media_files = image_files + video_files
     
-    if video_files:
-        console.print(
-            f"[yellow]Note: Found {len(video_files)} video files. "
-            f"Video detection coming in Phase 4![/yellow]"
-        )
-    
-    if not image_files:
-        console.print("[red]No supported image files found[/red]")
+    if not all_media_files:
+        console.print("[red]No supported media files found[/red]")
         sys.exit(1)
+    
+    if image_files and video_files:
+        console.print(
+            f"  🖼️  [green]{len(image_files)}[/green] images\n"
+            f"  🎬 [blue]{len(video_files)}[/blue] videos"
+        )
     
     # Initialize detector
     with Progress(
@@ -186,10 +187,12 @@ def detect(
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        task = progress.add_task("Processing...", total=len(image_files))
+        task = progress.add_task("Processing...", total=len(all_media_files))
         
-        for file_path in image_files:
-            progress.update(task, description=f"Processing {file_path.name}...")
+        for file_path in all_media_files:
+            media_type = get_media_type(file_path)
+            media_emoji = "🖼️" if media_type == MediaType.IMAGE else "🎬"
+            progress.update(task, description=f"{media_emoji} Processing {file_path.name}...")
             
             try:
                 result = detector.detect(file_path, return_evidence=evidence)
@@ -247,13 +250,17 @@ def display_single_result(result) -> None:
         label_color = "yellow"
         verdict = result.label.upper()
     
+    # Media type indicator
+    is_video = result.input_type == "video"
+    media_emoji = "🎬" if is_video else "🖼️"
+    
     # Confidence bar
     conf_int = int(result.confidence * 20)
     conf_bar = "█" * conf_int + "░" * (20 - conf_int)
     
     # Build panel content
     content = []
-    content.append(f"[bold {label_color}]{emoji} {verdict}[/bold {label_color}]")
+    content.append(f"[bold {label_color}]{emoji} {verdict}[/bold {label_color}] {media_emoji}")
     content.append("")
     content.append(f"Confidence: [{label_color}]{conf_bar}[/{label_color}] {result.confidence:.1%}")
     content.append("")
@@ -264,6 +271,27 @@ def display_single_result(result) -> None:
         content.append(f"[dim]Size:[/dim] {result.input_size[0]} × {result.input_size[1]} px")
     if result.processing_time_ms > 0:
         content.append(f"[dim]Time:[/dim] {result.processing_time_ms:.0f} ms")
+    
+    # Video-specific info
+    if is_video:
+        content.append("")
+        content.append("[bold cyan]Video Analysis:[/bold cyan]")
+        if result.video_duration:
+            content.append(f"  [dim]Duration:[/dim] {result.video_duration:.1f}s")
+        if result.num_frames_analyzed:
+            content.append(f"  [dim]Frames analyzed:[/dim] {result.num_frames_analyzed}")
+        if result.temporal_consistency is not None:
+            tc_int = int(result.temporal_consistency * 10)
+            tc_bar = "█" * tc_int + "░" * (10 - tc_int)
+            tc_color = "green" if result.temporal_consistency > 0.7 else "yellow" if result.temporal_consistency > 0.5 else "red"
+            content.append(f"  [dim]Temporal consistency:[/dim] [{tc_color}]{tc_bar}[/{tc_color}] {result.temporal_consistency:.1%}")
+        if result.suspicious_frames:
+            content.append(f"  [dim]Suspicious frames:[/dim] [yellow]{len(result.suspicious_frames)}[/yellow]")
+            # Show first few frame numbers
+            frame_nums = ", ".join(str(f) for f in result.suspicious_frames[:5])
+            if len(result.suspicious_frames) > 5:
+                frame_nums += f", ... (+{len(result.suspicious_frames) - 5} more)"
+            content.append(f"    [dim]Frames: {frame_nums}[/dim]")
     
     # Detector scores
     if result.detector_scores:
@@ -290,12 +318,21 @@ def display_results_table(results: list) -> None:
         header_style="bold blue",
     )
     
+    table.add_column("Type", justify="center", width=4)
     table.add_column("File", style="cyan", no_wrap=True)
     table.add_column("Verdict", justify="center")
     table.add_column("Confidence", justify="right")
     table.add_column("Time", justify="right", style="dim")
     
+    # Check if any videos in results
+    has_videos = any(r.input_type == "video" for r in results)
+    if has_videos:
+        table.add_column("Frames", justify="right", style="dim")
+    
     for result in results:
+        # Media type
+        media_type = "🎬" if result.input_type == "video" else "🖼️"
+        
         # File name
         if result.input_path:
             filename = Path(result.input_path).name
@@ -318,7 +355,15 @@ def display_results_table(results: list) -> None:
         # Time
         time_str = f"{result.processing_time_ms:.0f}ms"
         
-        table.add_row(filename, verdict, confidence, time_str)
+        # Build row
+        row = [media_type, filename, verdict, confidence, time_str]
+        
+        # Add frames column for videos
+        if has_videos:
+            frames_str = str(result.num_frames_analyzed) if result.num_frames_analyzed else "-"
+            row.append(frames_str)
+        
+        table.add_row(*row)
     
     console.print(table)
     

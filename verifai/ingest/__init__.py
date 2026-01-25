@@ -15,10 +15,25 @@ from verifai.ingest.utils import (
     get_media_type,
     MediaType,
 )
+from verifai.ingest.video_loader import (
+    VideoLoader,
+    VideoData,
+    VideoFrame,
+    VideoMetadata,
+    load_video,
+)
 
 __all__ = [
+    # Image
     "ImageLoader",
     "load_image",
+    # Video
+    "VideoLoader",
+    "VideoData",
+    "VideoFrame",
+    "VideoMetadata",
+    "load_video",
+    # Utils
     "validate_file_path",
     "get_media_type",
     "MediaType",

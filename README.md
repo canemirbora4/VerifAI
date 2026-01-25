@@ -76,6 +76,15 @@ print(f"Is AI: {result.is_ai_generated}")      # True or False
 
 # Get detailed JSON output
 print(result.to_json())
+
+# Detect video (frame-by-frame analysis with temporal consistency)
+result = detector.detect("video.mp4")
+
+print(f"Label: {result.label}")
+print(f"Confidence: {result.confidence:.1%}")
+print(f"Temporal consistency: {result.temporal_consistency:.1%}")
+print(f"Suspicious frames: {result.suspicious_frames}")
+print(f"Frames analyzed: {result.num_frames_analyzed}")
 ```
 
 ---
@@ -87,9 +96,41 @@ print(result.to_json())
 VerifAI uses an ensemble approach combining multiple detection signals:
 
 1. **Neural Detector** — Vision Transformer (ViT) trained to recognize AI-generated patterns
-2. **Frequency Detector** — FFT/DCT analysis of image frequency patterns *(Phase 2)*
-3. **PRNU Detector** — Camera sensor noise fingerprint analysis *(Phase 5)*
-4. **Provenance Checker** — EXIF metadata and C2PA credential verification *(Phase 5)*
+2. **Frequency Detector** — FFT/DCT analysis of image frequency patterns
+3. **Temporal Analyzer** — Video consistency and flicker detection *(videos only)*
+4. **PRNU Detector** — Camera sensor noise fingerprint analysis *(Phase 5)*
+5. **Provenance Checker** — EXIF metadata and C2PA credential verification *(Phase 5)*
+
+### Video Detection
+
+Video detection analyzes multiple frames and temporal consistency:
+
+```python
+from verifai import VerifAI
+
+detector = VerifAI()
+result = detector.detect("suspicious_video.mp4")
+
+# Video-specific outputs
+print(f"Video duration: {result.video_duration:.1f}s")
+print(f"Frames analyzed: {result.num_frames_analyzed}")
+print(f"Temporal consistency: {result.temporal_consistency:.1%}")
+
+# Per-frame scores
+for frame_score in result.frame_scores:
+    if frame_score.is_suspicious:
+        print(f"  Frame {frame_score.frame_number} @ {frame_score.timestamp:.2f}s: {frame_score.score:.1%}")
+
+# Suspicious frame indices
+if result.suspicious_frames:
+    print(f"Suspicious frames: {result.suspicious_frames}")
+```
+
+**Temporal Analysis Features:**
+- **Flicker Detection** — Detects unnatural brightness variations between frames
+- **Consistency Score** — Measures overall temporal coherence
+- **Motion Smoothness** — Analyzes physically plausible motion
+- **Noise Pattern Analysis** — Checks for consistent sensor noise across frames
 
 ### Supported Formats
 
@@ -100,7 +141,7 @@ VerifAI uses an ensemble approach combining multiple detection signals:
 - BMP (.bmp)
 - TIFF (.tiff, .tif)
 
-**Videos:** *(Coming in Phase 4)*
+**Videos:**
 - MP4 (.mp4)
 - AVI (.avi)
 - MOV (.mov)
@@ -289,10 +330,10 @@ pytest -m "not slow"
 - [x] Cross-generator evaluation
 
 ### Phase 4 Video Pipeline
-- [ ] Video frame extraction
-- [ ] Per-frame detection
-- [ ] Temporal aggregation
-- [ ] Video corruption tests
+- [x] Video frame extraction
+- [x] Per-frame detection
+- [x] Temporal aggregation
+- [x] Video corruption tests
 
 ### Phase 5 Advanced Detection
 - [ ] PRNU analysis

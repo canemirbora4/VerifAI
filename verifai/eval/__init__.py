@@ -5,7 +5,7 @@ Evaluation Module
 Tools for evaluating detection performance:
 - Classification metrics (accuracy, precision, recall, F1, ROC-AUC)
 - Calibration metrics (ECE, reliability diagrams)
-- Corruption harness for robustness testing
+- Corruption harness for robustness testing (image + video)
 - Benchmark runner with auto-generated reports
 """
 
@@ -17,6 +17,7 @@ from verifai.eval.metrics import (
     MetricsResult,
 )
 from verifai.eval.corruptions import (
+    # Image corruptions
     ImageCorruptor,
     CorruptionType,
     CorruptionConfig,
@@ -24,6 +25,11 @@ from verifai.eval.corruptions import (
     apply_jpeg_compression,
     apply_resize,
     apply_blur,
+    # Video corruptions
+    VideoCorruptor,
+    VideoCorruptionType,
+    VideoCorruptionConfig,
+    VideoCorruptionResult,
 )
 from verifai.eval.benchmark import (
     Benchmark,
@@ -40,7 +46,7 @@ __all__ = [
     "compute_calibration_error",
     "find_optimal_threshold",
     "MetricsResult",
-    # Corruptions
+    # Image Corruptions
     "ImageCorruptor",
     "CorruptionType",
     "CorruptionConfig",
@@ -48,6 +54,11 @@ __all__ = [
     "apply_jpeg_compression",
     "apply_resize",
     "apply_blur",
+    # Video Corruptions
+    "VideoCorruptor",
+    "VideoCorruptionType",
+    "VideoCorruptionConfig",
+    "VideoCorruptionResult",
     # Benchmark
     "Benchmark",
     "BenchmarkConfig",
