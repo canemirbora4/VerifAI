@@ -3,16 +3,46 @@ Fusion Module - Ensemble & Calibration
 =======================================
 
 Combines outputs from multiple detectors:
-- Ensemble methods (average, weighted, learned) - Phase 2
-- Probability calibration (isotonic, Platt) - Phase 2
-- Explainability (heatmaps, evidence) - Phase 2
+- Ensemble methods (average, weighted, learned)
+- Probability calibration (isotonic, Platt, temperature)
+- Explainability (heatmaps, attention visualization)
 
 This module produces the final calibrated confidence scores.
 """
 
-# Placeholder for Phase 2+
-# from verifai.fusion.ensemble import Ensemble
-# from verifai.fusion.calibration import Calibrator
-# from verifai.fusion.explainer import Explainer
+from verifai.fusion.ensemble import (
+    Ensemble,
+    EnsembleConfig,
+    EnsembleOutput,
+    FusionMethod,
+    create_metadata_detector_output,
+)
+from verifai.fusion.calibration import (
+    Calibrator,
+    CalibrationResult,
+    calibrate_scores,
+)
+from verifai.fusion.explainer import (
+    Explainer,
+    ExplanationResult,
+    GradCAM,
+    generate_heatmap,
+)
 
-__all__ = []
+__all__ = [
+    # Ensemble
+    "Ensemble",
+    "EnsembleConfig",
+    "EnsembleOutput",
+    "FusionMethod",
+    "create_metadata_detector_output",
+    # Calibration
+    "Calibrator",
+    "CalibrationResult",
+    "calibrate_scores",
+    # Explainer
+    "Explainer",
+    "ExplanationResult",
+    "GradCAM",
+    "generate_heatmap",
+]

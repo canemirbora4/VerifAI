@@ -3,7 +3,7 @@ VerifAI Pipeline
 =================
 
 Main orchestrator for the AI-generated media detection pipeline.
-Combines all components: ingestion, detection, and output formatting.
+Combines all components: ingestion, detection, ensemble, and output formatting.
 """
 
 from dataclasses import dataclass, field
@@ -19,8 +19,17 @@ from PIL import Image
 from loguru import logger
 
 from verifai.ingest import ImageLoader, validate_file_path, get_media_type, MediaType
-from verifai.models import NeuralDetector, DetectorOutput
+from verifai.models import NeuralDetector, FrequencyDetector, DetectorOutput
 from verifai.models.base import Label
+from verifai.features import MetadataParser, parse_metadata
+from verifai.fusion import (
+    Ensemble,
+    EnsembleConfig,
+    FusionMethod,
+    Calibrator,
+    Explainer,
+    create_metadata_detector_output,
+)
 
 
 @dataclass
@@ -42,8 +51,13 @@ class DetectionResult:
     # Detailed scores from each detector
     detector_scores: dict[str, float] = field(default_factory=dict)
     
+    # Calibration info
+    raw_score: Optional[float] = None
+    calibrated: bool = False
+    
     # Evidence
     evidence: dict[str, Any] = field(default_factory=dict)
+    heatmap: Optional[np.ndarray] = None
     
     # Input metadata
     input_path: Optional[str] = None
@@ -55,6 +69,10 @@ class DetectionResult:
     timestamp: str = ""
     version: str = "0.1.0"
     
+    # Ensemble info
+    fusion_method: Optional[str] = None
+    detector_weights: dict[str, float] = field(default_factory=dict)
+    
     # Additional metadata
     metadata: dict[str, Any] = field(default_factory=dict)
     
@@ -64,7 +82,7 @@ class DetectionResult:
     
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
-        return {
+        result = {
             "result": {
                 "label": self.label,
                 "confidence": round(self.confidence, 4),
@@ -73,8 +91,12 @@ class DetectionResult:
             "detector_scores": {
                 k: round(v, 4) for k, v in self.detector_scores.items()
             },
+            "calibration": {
+                "raw_score": round(self.raw_score, 4) if self.raw_score else None,
+                "calibrated": self.calibrated,
+            },
             "evidence": {
-                k: v if not isinstance(v, np.ndarray) else v.tolist()
+                k: v if not isinstance(v, np.ndarray) else "array"
                 for k, v in self.evidence.items()
             },
             "input": {
@@ -87,8 +109,20 @@ class DetectionResult:
                 "timestamp": self.timestamp,
                 "version": self.version,
             },
+            "ensemble": {
+                "fusion_method": self.fusion_method,
+                "detector_weights": {
+                    k: round(v, 3) for k, v in self.detector_weights.items()
+                } if self.detector_weights else None,
+            },
             "metadata": self.metadata,
         }
+        
+        # Include heatmap info if present
+        if self.heatmap is not None:
+            result["has_heatmap"] = True
+        
+        return result
     
     def to_json(self, indent: int = 2) -> str:
         """Convert to JSON string."""
@@ -105,8 +139,12 @@ class DetectionResult:
             "─" * 50,
             f"  {label_emoji} Verdict: {self.label.upper()}",
             f"  Confidence: [{confidence_bar}] {self.confidence:.1%}",
-            "─" * 50,
         ]
+        
+        if self.calibrated:
+            lines.append(f"  (calibrated from {self.raw_score:.1%})")
+        
+        lines.append("─" * 50)
         
         if self.input_path:
             lines.append(f"  File: {Path(self.input_path).name}")
@@ -114,6 +152,14 @@ class DetectionResult:
             lines.append(f"  Size: {self.input_size[0]}×{self.input_size[1]}")
         if self.processing_time_ms > 0:
             lines.append(f"  Time: {self.processing_time_ms:.0f}ms")
+        
+        # Detector breakdown
+        if self.detector_scores:
+            lines.append("─" * 50)
+            lines.append("  Detector Scores:")
+            for name, score in self.detector_scores.items():
+                weight = self.detector_weights.get(name, 0)
+                lines.append(f"    {name}: {score:.1%} (weight: {weight:.0%})")
         
         lines.append("─" * 50)
         
@@ -124,6 +170,13 @@ class VerifAI:
     """
     Main VerifAI pipeline for AI-generated media detection.
     
+    This pipeline combines multiple detection signals:
+    - Neural detector (ViT-based)
+    - Frequency detector (FFT/DCT-based)
+    - Metadata analysis (EXIF/provenance)
+    
+    The outputs are combined via ensemble fusion and optionally calibrated.
+    
     Usage:
         >>> detector = VerifAI()
         >>> result = detector.detect("image.jpg")
@@ -132,8 +185,9 @@ class VerifAI:
     Or with custom configuration:
         >>> detector = VerifAI(
         ...     model_name="google/vit-large-patch16-224",
-        ...     device="cuda",
-        ...     threshold=0.6,
+        ...     use_frequency=True,
+        ...     use_metadata=True,
+        ...     calibration_method="isotonic",
         ... )
     """
     
@@ -144,23 +198,45 @@ class VerifAI:
         threshold: float = 0.5,
         fp16: bool = True,
         auto_load: bool = True,
+        # Ensemble settings
+        use_frequency: bool = True,
+        use_metadata: bool = True,
+        fusion_method: str = "weighted",
+        detector_weights: Optional[dict[str, float]] = None,
+        # Calibration
+        calibration_method: Optional[str] = None,
+        calibration_path: Optional[str] = None,
+        # Explainability
+        generate_heatmaps: bool = False,
     ):
         """
         Initialize the VerifAI pipeline.
         
         Args:
-            model_name: HuggingFace model ID or local path
+            model_name: HuggingFace model ID or local path for neural detector
             device: Device for inference ("cuda", "mps", "cpu", or None for auto)
             threshold: Classification threshold
             fp16: Use FP16 inference (faster on GPU)
-            auto_load: Automatically load model on first detection
+            auto_load: Automatically load models on first detection
+            use_frequency: Enable frequency-based detection
+            use_metadata: Enable metadata analysis
+            fusion_method: Ensemble fusion method ("average", "weighted", "max")
+            detector_weights: Custom weights for detectors
+            calibration_method: Calibration method ("isotonic", "platt", None)
+            calibration_path: Path to fitted calibrator
+            generate_heatmaps: Generate explanation heatmaps
         """
         self.model_name = model_name
         self.threshold = threshold
         self.auto_load = auto_load
+        self.use_frequency = use_frequency
+        self.use_metadata = use_metadata
+        self.generate_heatmaps = generate_heatmaps
         
         # Initialize components
         self._image_loader = ImageLoader()
+        
+        # Neural detector
         self._neural_detector = NeuralDetector(
             model_name=model_name,
             device=device,
@@ -168,9 +244,63 @@ class VerifAI:
             fp16=fp16,
         )
         
+        # Frequency detector (optional)
+        self._frequency_detector = None
+        if use_frequency:
+            self._frequency_detector = FrequencyDetector(
+                device=device,
+                threshold=threshold,
+            )
+        
+        # Metadata parser (optional)
+        self._metadata_parser = None
+        if use_metadata:
+            self._metadata_parser = MetadataParser()
+        
+        # Ensemble configuration
+        active_detectors = ["neural"]
+        default_weights = {"neural": 0.6}
+        
+        if use_frequency:
+            active_detectors.append("frequency")
+            default_weights["frequency"] = 0.25
+        
+        if use_metadata:
+            active_detectors.append("metadata")
+            default_weights["metadata"] = 0.15
+        
+        # Use custom weights if provided
+        if detector_weights:
+            default_weights.update(detector_weights)
+        
+        self._ensemble = Ensemble(EnsembleConfig(
+            method=FusionMethod(fusion_method),
+            weights=default_weights,
+            detectors=active_detectors,
+            threshold=threshold,
+        ))
+        
+        # Calibrator (optional)
+        self._calibrator = None
+        if calibration_method:
+            if calibration_path and Path(calibration_path).exists():
+                self._calibrator = Calibrator.load(calibration_path)
+            else:
+                self._calibrator = Calibrator(method=calibration_method)
+                logger.warning(
+                    "Calibrator created but not fitted. "
+                    "Call fit_calibrator() with validation data."
+                )
+        
+        # Explainer
+        self._explainer = Explainer() if generate_heatmaps else None
+        
         self._is_loaded = False
         
-        logger.info(f"VerifAI initialized with model: {model_name}")
+        logger.info(
+            f"VerifAI initialized: model={model_name}, "
+            f"detectors={active_detectors}, fusion={fusion_method}"
+        )
     
     @property
     def is_loaded(self) -> bool:
@@ -183,7 +313,14 @@ class VerifAI:
             return
         
         logger.info("Loading VerifAI models...")
+        
+        # Load neural detector
         self._neural_detector.load()
+        
+        # Load frequency detector
+        if self._frequency_detector:
+            self._frequency_detector.load()
+        
         self._is_loaded = True
         logger.info("VerifAI ready for detection")
     
@@ -197,7 +334,7 @@ class VerifAI:
         
         Args:
             source: Input source - file path, bytes, or PIL Image
-            return_evidence: Include evidence (attention maps, etc.)
+            return_evidence: Include detailed evidence in output
             
         Returns:
             DetectionResult with classification and metadata
@@ -253,11 +390,11 @@ class VerifAI:
         return_evidence: bool = False,
     ) -> DetectionResult:
         """
-        Run detection on an image.
+        Run detection on an image using the full ensemble.
         
         Args:
             source: Image source
-            return_evidence: Include attention evidence
+            return_evidence: Include detailed evidence
             
         Returns:
             DetectionResult
@@ -265,36 +402,105 @@ class VerifAI:
         # Load and preprocess image
         image_data = self._image_loader.load(source, preprocess=True)
         
-        # Run neural detector
-        detector_output = self._neural_detector.detect(
+        # Collect detector outputs
+        detector_outputs = {}
+        
+        # 1. Neural detector
+        neural_output = self._neural_detector.detect(
             image_data.tensor,
             return_features=False,
-            return_evidence=return_evidence,
+            return_evidence=return_evidence and self.generate_heatmaps,
         )
+        detector_outputs["neural"] = neural_output
         
-        # Determine final label and confidence
-        # In Phase 1, we only have neural detector
-        # Future phases will combine multiple detectors
-        final_confidence = detector_output.confidence
-        final_label = detector_output.label
+        # 2. Frequency detector
+        if self._frequency_detector:
+            freq_output = self._frequency_detector.detect(
+                image_data.tensor,
+                return_features=False,
+                return_evidence=return_evidence,
+            )
+            detector_outputs["frequency"] = freq_output
+        
+        # 3. Metadata analysis
+        metadata_features = None
+        if self._metadata_parser and image_data.source_path:
+            metadata_features = self._metadata_parser.parse(image_data.source_path)
+            metadata_output = create_metadata_detector_output(metadata_features)
+            detector_outputs["metadata"] = metadata_output
+        
+        # Ensemble fusion
+        ensemble_result = self._ensemble.fuse(detector_outputs)
+        
+        # Get raw score before calibration
+        raw_score = ensemble_result.final_score
+        calibrated = False
+        final_confidence = raw_score
+        
+        # Apply calibration if available and fitted
+        if self._calibrator and self._calibrator.is_fitted:
+            final_confidence = self._calibrator.calibrate(raw_score)
+            calibrated = True
+        
+        # Determine final label based on calibrated score
+        if final_confidence >= self.threshold:
+            final_label = Label.AI_GENERATED
+        else:
+            final_label = Label.REAL
         
         # Build result
         result = DetectionResult(
             label=final_label.value,
             confidence=final_confidence,
             is_ai_generated=final_label == Label.AI_GENERATED,
-            detector_scores={
-                "neural": detector_output.raw_score,
-            },
+            detector_scores=ensemble_result.detector_scores,
+            raw_score=raw_score,
+            calibrated=calibrated,
             input_size=(image_data.width, image_data.height),
+            fusion_method=ensemble_result.fusion_method,
+            detector_weights=ensemble_result.detector_weights,
             metadata={
                 "exif_present": bool(image_data.exif),
             }
         )
         
         # Add evidence if requested
-        if return_evidence and detector_output.evidence:
-            result.evidence = detector_output.evidence
+        if return_evidence:
+            evidence = {}
+            
+            # Neural detector evidence
+            if neural_output.evidence:
+                evidence["neural"] = neural_output.evidence
+            
+            # Frequency detector evidence
+            if "frequency" in detector_outputs and detector_outputs["frequency"].evidence:
+                evidence["frequency"] = detector_outputs["frequency"].evidence
+            
+            # Metadata evidence
+            if metadata_features:
+                evidence["metadata"] = {
+                    "has_camera_info": metadata_features.has_camera_info,
+                    "camera_make": metadata_features.camera_make,
+                    "camera_model": metadata_features.camera_model,
+                    "is_suspicious": metadata_features.is_suspicious,
+                    "suspicion_reasons": metadata_features.suspicion_reasons,
+                }
+            
+            result.evidence = evidence
+        
+        # Generate heatmap if requested
+        if self.generate_heatmaps and self._explainer:
+            try:
+                explanation = self._explainer.explain(
+                    image_data.original,
+                    model=self._neural_detector.model,
+                    input_tensor=image_data.tensor,
+                    method="gradcam",
+                )
+                result.heatmap = explanation.heatmap
+                result.evidence["suspicious_regions"] = explanation.suspicious_regions
+            except Exception as e:
+                logger.warning(f"Heatmap generation failed: {e}")
         
         return result
     
@@ -336,12 +542,75 @@ class VerifAI:
         
         return results
     
+    def fit_calibrator(
+        self,
+        images: list[Union[str, Path]],
+        labels: list[int],
+    ) -> None:
+        """
+        Fit the calibrator on validation data.
+        
+        Args:
+            images: List of image paths
+            labels: Ground truth labels (0=real, 1=AI)
+        """
+        if self._calibrator is None:
+            logger.warning("No calibrator configured")
+            return
+        
+        logger.info(f"Fitting calibrator on {len(images)} samples...")
+        
+        # Get scores for all images
+        scores = []
+        for img_path in images:
+            try:
+                result = self.detect(img_path)
+                scores.append(result.raw_score or result.confidence)
+            except Exception as e:
+                logger.warning(f"Skipping {img_path}: {e}")
+                continue
+        
+        if len(scores) != len(labels):
+            logger.error("Mismatch between scores and labels")
+            return
+        
+        # Fit calibrator
+        import numpy as np
+        self._calibrator.fit(np.array(scores), np.array(labels))
+        logger.info("Calibrator fitted successfully")
+    
+    def save_calibrator(self, path: str) -> None:
+        """Save fitted calibrator to file."""
+        if self._calibrator:
+            self._calibrator.save(path)
+    
     def get_info(self) -> dict:
         """Get information about the pipeline configuration."""
-        return {
+        info = {
             "version": "0.1.0",
             "model": self.model_name,
             "threshold": self.threshold,
             "is_loaded": self._is_loaded,
-            "neural_detector": self._neural_detector.get_model_info(),
+            "detectors": {
+                "neural": True,
+                "frequency": self._frequency_detector is not None,
+                "metadata": self._metadata_parser is not None,
+            },
+            "ensemble": {
+                "method": self._ensemble.config.method.value,
+                "weights": self._ensemble.config.weights,
+            },
+            "calibration": {
+                "enabled": self._calibrator is not None,
+                "method": self._calibrator.method if self._calibrator else None,
+                "fitted": self._calibrator.is_fitted if self._calibrator else False,
+            },
+            "heatmaps": self.generate_heatmaps,
         }
+        
+        if self._is_loaded:
+            info["neural_detector"] = self._neural_detector.get_model_info()
+            if self._frequency_detector:
+                info["frequency_detector"] = self._frequency_detector.get_model_info()
+        
+        return info

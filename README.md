@@ -277,10 +277,10 @@ pytest -m "not slow"
 - [x] Evaluation metrics
 
 ### Phase 2 Multi-Signal Detection
-- [ ] Frequency domain features (FFT/DCT)
-- [ ] Ensemble fusion
-- [ ] Probability calibration
-- [ ] Heatmap generation
+- [x] Frequency domain features (FFT/DCT)
+- [x] Ensemble fusion
+- [x] Probability calibration
+- [x] Heatmap generation
 
 ### Phase 3 Robustness Evaluation
 - [ ] Corruption harness (JPEG, resize, blur)
