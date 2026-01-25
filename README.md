@@ -8,14 +8,14 @@
 
 ---
 
-## ✨ Features
+##  Features
 
-- 🎯 **Calibrated Confidence Scores** — Not just yes/no, but reliable probability estimates
-- 🔬 **Multi-Signal Detection** — Ensemble of neural, frequency, and provenance signals
-- 📍 **Localized Evidence** — Heatmaps showing which regions triggered detection
-- 📊 **Robustness Evaluation** — Test performance under real-world transformations (JPEG, resize, etc.)
-- 🎬 **Image & Video Support** — Process both still images and video files
-- ⚡ **Fast Inference** — Optimized for both CPU and GPU with FP16 support
+-  **Calibrated Confidence Scores** — Not just yes/no, but reliable probability estimates
+-  **Multi-Signal Detection** — Ensemble of neural, frequency, and provenance signals
+-  **Localized Evidence** — Heatmaps showing which regions triggered detection
+-  **Robustness Evaluation** — Test performance under real-world transformations (JPEG, resize, etc.)
+- **Image & Video Support** — Process both still images and video files
+-  **Fast Inference** — Optimized for both CPU and GPU with FP16 support
 
 ---
 
@@ -309,7 +309,7 @@ pytest -m "not slow"
 
 ---
 
-## 📚 References
+## References
 
 ### Papers
 
@@ -341,18 +341,3 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
-## 🤝 Contributing
-
-Contributions are welcome! Please read our contributing guidelines and submit pull requests.
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
----
-
-<p align="center">
-  Built with ❤️ for media authenticity
-</p>
