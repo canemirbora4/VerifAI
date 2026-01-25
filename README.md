@@ -132,6 +132,60 @@ if result.suspicious_frames:
 - **Motion Smoothness** — Analyzes physically plausible motion
 - **Noise Pattern Analysis** — Checks for consistent sensor noise across frames
 
+### PRNU Analysis (Camera Fingerprinting)
+
+PRNU (Photo-Response Non-Uniformity) is a unique fingerprint caused by manufacturing imperfections in camera sensors. Real photos carry this fingerprint; AI images don't.
+
+```python
+from verifai.features import PRNUExtractor, extract_prnu
+
+# Quick analysis
+features = extract_prnu("photo.jpg")
+
+print(f"Has PRNU signature: {features.has_prnu_signature}")
+print(f"PRNU score: {features.prnu_score:.1%}")  # Higher = more likely real
+print(f"Is likely real: {features.is_likely_real}")
+
+# Build reference fingerprint from multiple images (same camera)
+extractor = PRNUExtractor()
+reference = extractor.build_reference([
+    "camera_photo1.jpg",
+    "camera_photo2.jpg",
+    "camera_photo3.jpg",
+])
+
+# Compare new image to reference
+features = extractor.extract("test_image.jpg", reference=reference)
+print(f"Correlation with camera: {features.correlation:.4f}")
+```
+
+### Provenance & C2PA (Content Credentials)
+
+C2PA is an open standard for digital content provenance. VerifAI checks for Content Credentials and analyzes provenance data.
+
+```python
+from verifai.features import ProvenanceAnalyzer, analyze_provenance
+
+# Quick analysis
+features = analyze_provenance("image.jpg")
+
+print(f"Has C2PA manifest: {features.has_c2pa}")
+print(f"Valid signature: {features.has_valid_signature}")
+print(f"Is verified: {features.is_verified}")
+print(f"Creation tool: {features.creation_tool}")
+
+# Check trust and risk indicators
+print(f"Trust indicators: {features.trust_indicators}")
+print(f"Risk indicators: {features.risk_indicators}")
+print(f"Provenance score: {features.provenance_score:.1%}")
+```
+
+**What the analyzer checks:**
+- **C2PA manifests** — Cryptographically signed content credentials
+- **XMP metadata** — Creation tool, edit history
+- **AI generation markers** — Known AI tool signatures
+- **Camera metadata** — Indicators of real camera origin
+
 ### Supported Formats
 
 **Images:**
@@ -336,10 +390,10 @@ pytest -m "not slow"
 - [x] Video corruption tests
 
 ### Phase 5 Advanced Detection
-- [ ] PRNU analysis
-- [ ] C2PA integration
-- [ ] Open-set detection
-- [ ] Final ensemble
+- [x] PRNU analysis
+- [x] C2PA integration
+- [x] Provenance analyzer
+- [x] Final ensemble
 
 ### Phase 6 Deployment
 - [ ] FastAPI server

@@ -28,7 +28,16 @@ from verifai.ingest import (
 )
 from verifai.models import NeuralDetector, FrequencyDetector, DetectorOutput
 from verifai.models.base import Label
-from verifai.features import MetadataParser, parse_metadata, TemporalAnalyzer, TemporalFeatures
+from verifai.features import (
+    MetadataParser,
+    parse_metadata,
+    TemporalAnalyzer,
+    TemporalFeatures,
+    PRNUExtractor,
+    PRNUFeatures,
+    ProvenanceAnalyzer,
+    ProvenanceFeatures,
+)
 from verifai.fusion import (
     Ensemble,
     EnsembleConfig,
@@ -237,6 +246,8 @@ class VerifAI:
     - Neural detector (ViT-based)
     - Frequency detector (FFT/DCT-based)
     - Metadata analysis (EXIF/provenance)
+    - PRNU analysis (camera sensor fingerprinting)
+    - Provenance analysis (C2PA/Content Credentials)
     
     The outputs are combined via ensemble fusion and optionally calibrated.
     
@@ -250,6 +261,8 @@ class VerifAI:
         ...     model_name="google/vit-large-patch16-224",
         ...     use_frequency=True,
         ...     use_metadata=True,
+        ...     use_prnu=True,
+        ...     use_provenance=True,
         ...     calibration_method="isotonic",
         ... )
     """
@@ -264,6 +277,8 @@ class VerifAI:
         # Ensemble settings
         use_frequency: bool = True,
         use_metadata: bool = True,
+        use_prnu: bool = True,
+        use_provenance: bool = True,
         fusion_method: str = "weighted",
         detector_weights: Optional[dict[str, float]] = None,
         # Calibration
@@ -283,6 +298,8 @@ class VerifAI:
             auto_load: Automatically load models on first detection
             use_frequency: Enable frequency-based detection
             use_metadata: Enable metadata analysis
+            use_prnu: Enable PRNU (camera sensor noise) analysis
+            use_provenance: Enable C2PA/provenance analysis
             fusion_method: Ensemble fusion method ("average", "weighted", "max")
             detector_weights: Custom weights for detectors
             calibration_method: Calibration method ("isotonic", "platt", None)
@@ -294,6 +311,8 @@ class VerifAI:
         self.auto_load = auto_load
         self.use_frequency = use_frequency
         self.use_metadata = use_metadata
+        self.use_prnu = use_prnu
+        self.use_provenance = use_provenance
         self.generate_heatmaps = generate_heatmaps
         
         # Initialize components
@@ -322,17 +341,36 @@ class VerifAI:
         if use_metadata:
             self._metadata_parser = MetadataParser()
         
+        # PRNU extractor (optional)
+        self._prnu_extractor = None
+        if use_prnu:
+            self._prnu_extractor = PRNUExtractor()
+        
+        # Provenance analyzer (optional)
+        self._provenance_analyzer = None
+        if use_provenance:
+            self._provenance_analyzer = ProvenanceAnalyzer()
+        
         # Ensemble configuration
+        # Weights are designed to sum to ~1.0 when all detectors enabled
         active_detectors = ["neural"]
-        default_weights = {"neural": 0.6}
+        default_weights = {"neural": 0.40}  # Primary signal
         
         if use_frequency:
             active_detectors.append("frequency")
-            default_weights["frequency"] = 0.25
+            default_weights["frequency"] = 0.20
         
         if use_metadata:
             active_detectors.append("metadata")
-            default_weights["metadata"] = 0.15
+            default_weights["metadata"] = 0.10
+        
+        if use_prnu:
+            active_detectors.append("prnu")
+            default_weights["prnu"] = 0.15
+        
+        if use_provenance:
+            active_detectors.append("provenance")
+            default_weights["provenance"] = 0.15
         
         # Use custom weights if provided
         if detector_weights:
@@ -496,6 +534,47 @@ class VerifAI:
             metadata_output = create_metadata_detector_output(metadata_features)
             detector_outputs["metadata"] = metadata_output
         
+        # 4. PRNU analysis
+        prnu_features = None
+        if self._prnu_extractor:
+            try:
+                prnu_features = self._prnu_extractor.extract(image_data.original)
+                # Convert PRNU score to DetectorOutput format
+                # PRNU score: 1.0 = likely real camera, 0.0 = likely AI
+                # We invert it for AI probability
+                prnu_ai_prob = 1.0 - prnu_features.prnu_score
+                prnu_output = DetectorOutput(
+                    label=Label.AI_GENERATED if prnu_ai_prob >= self.threshold else Label.REAL,
+                    confidence=abs(prnu_ai_prob - 0.5) * 2,  # Distance from uncertain
+                    ai_probability=prnu_ai_prob,
+                    evidence={"prnu_score": prnu_features.prnu_score} if return_evidence else None,
+                )
+                detector_outputs["prnu"] = prnu_output
+            except Exception as e:
+                logger.debug(f"PRNU extraction failed: {e}")
+        
+        # 5. Provenance analysis
+        provenance_features = None
+        if self._provenance_analyzer and image_data.source_path:
+            try:
+                provenance_features = self._provenance_analyzer.analyze(image_data.source_path)
+                # Convert provenance score to DetectorOutput format
+                # Provenance score: 1.0 = verified authentic, 0.0 = no/bad provenance
+                # We invert it for AI probability
+                prov_ai_prob = 1.0 - provenance_features.provenance_score
+                prov_output = DetectorOutput(
+                    label=Label.AI_GENERATED if prov_ai_prob >= self.threshold else Label.REAL,
+                    confidence=abs(prov_ai_prob - 0.5) * 2,
+                    ai_probability=prov_ai_prob,
+                    evidence={
+                        "has_c2pa": provenance_features.has_c2pa,
+                        "is_verified": provenance_features.is_verified,
+                    } if return_evidence else None,
+                )
+                detector_outputs["provenance"] = prov_output
+            except Exception as e:
+                logger.debug(f"Provenance analysis failed: {e}")
+        
         # Ensemble fusion
         ensemble_result = self._ensemble.fuse(detector_outputs)
         
@@ -551,6 +630,28 @@ class VerifAI:
                     "camera_model": metadata_features.camera_model,
                     "is_suspicious": metadata_features.is_suspicious,
                     "suspicion_reasons": metadata_features.suspicion_reasons,
+                }
+            
+            # PRNU evidence
+            if prnu_features:
+                evidence["prnu"] = {
+                    "prnu_score": prnu_features.prnu_score,
+                    "has_prnu_signature": prnu_features.has_prnu_signature,
+                    "noise_strength": prnu_features.noise_strength,
+                    "noise_uniformity": prnu_features.noise_uniformity,
+                    "is_likely_real": prnu_features.is_likely_real,
+                }
+            
+            # Provenance evidence
+            if provenance_features:
+                evidence["provenance"] = {
+                    "has_c2pa": provenance_features.has_c2pa,
+                    "has_valid_signature": provenance_features.has_valid_signature,
+                    "is_verified": provenance_features.is_verified,
+                    "creation_tool": provenance_features.creation_tool,
+                    "trust_indicators": provenance_features.trust_indicators,
+                    "risk_indicators": provenance_features.risk_indicators,
+                    "provenance_score": provenance_features.provenance_score,
                 }
             
             result.evidence = evidence
@@ -834,6 +935,8 @@ class VerifAI:
                 "neural": True,
                 "frequency": self._frequency_detector is not None,
                 "metadata": self._metadata_parser is not None,
+                "prnu": self._prnu_extractor is not None,
+                "provenance": self._provenance_analyzer is not None,
             },
             "ensemble": {
                 "method": self._ensemble.config.method.value,
