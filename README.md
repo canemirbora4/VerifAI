@@ -80,7 +80,7 @@ print(result.to_json())
 
 ---
 
-## 📖 Documentation
+## Documentation
 
 ### Detection Pipeline
 
@@ -136,7 +136,7 @@ See `config/default.yaml` for all available options.
 
 ---
 
-## 📊 Evaluation
+## Evaluation
 
 ### Running Evaluation
 
@@ -189,7 +189,7 @@ print(metrics.summary())
 
 ---
 
-## 🏗️ Project Structure
+## Project Structure
 
 ```
 VerifAI/
@@ -219,7 +219,7 @@ VerifAI/
 
 ---
 
-## 🧪 Development
+## Development
 
 ### Setup Development Environment
 
@@ -267,40 +267,40 @@ pytest -m "not slow"
 
 ---
 
-## 🗺️ Roadmap
+##  Roadmap
 
-### Phase 1 ✅ Foundation
+### Phase 1 Foundation
 - [x] Project scaffolding
 - [x] Image ingestion pipeline
 - [x] Neural detector (ViT)
 - [x] Basic CLI
 - [x] Evaluation metrics
 
-### Phase 2 🔄 Multi-Signal Detection
+### Phase 2 Multi-Signal Detection
 - [ ] Frequency domain features (FFT/DCT)
 - [ ] Ensemble fusion
 - [ ] Probability calibration
 - [ ] Heatmap generation
 
-### Phase 3 📈 Robustness Evaluation
+### Phase 3 Robustness Evaluation
 - [ ] Corruption harness (JPEG, resize, blur)
 - [ ] Robustness curves
 - [ ] Benchmark reports
 - [ ] Cross-generator evaluation
 
-### Phase 4 🎬 Video Pipeline
+### Phase 4 Video Pipeline
 - [ ] Video frame extraction
 - [ ] Per-frame detection
 - [ ] Temporal aggregation
 - [ ] Video corruption tests
 
-### Phase 5 🔬 Advanced Detection
+### Phase 5 Advanced Detection
 - [ ] PRNU analysis
 - [ ] C2PA integration
 - [ ] Open-set detection
 - [ ] Final ensemble
 
-### Phase 6 🚀 Deployment
+### Phase 6 Deployment
 - [ ] FastAPI server
 - [ ] Gradio UI
 - [ ] Docker container
