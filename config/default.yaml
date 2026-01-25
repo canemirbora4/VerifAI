@@ -53,12 +53,15 @@ video:
 # Neural Detector Settings
 neural_detector:
   # Model identifier (HuggingFace model hub or local path)
-  model_name: "google/vit-base-patch16-224"
+  # RECOMMENDED: Use pre-trained AI detection model
+  model_name: "umm-maybe/AI-image-detector"
+  # Alternative for SDXL-specific detection:
+  # model_name: "Organika/sdxl-detector"
   # Whether to use pretrained weights
   pretrained: true
   # Number of classes (2 for binary: real vs AI)
   num_classes: 2
-  # Class labels
+  # Class labels (auto-detected from model config)
   labels:
     0: "real"
     1: "ai_generated"
@@ -69,22 +72,24 @@ neural_detector:
   # Confidence threshold for classification
   threshold: 0.5
 
-# Ensemble Settings (for future phases)
+# Ensemble Settings
 ensemble:
   # Enabled detectors
   detectors:
-    neural: true
-    frequency: false  # Phase 2
-    prnu: false       # Phase 5
-    provenance: false # Phase 5
-  # Fusion method: "average", "weighted", "learned"
-  fusion_method: "average"
-  # Weights for weighted fusion (must sum to 1.0)
+    neural: true       # ViT-based detector
+    frequency: true    # FFT/DCT analysis
+    metadata: true     # EXIF analysis
+    prnu: true         # Camera fingerprint
+    provenance: true   # C2PA/Content Credentials
+  # Fusion method: "average", "weighted", "max", "confidence_weighted"
+  fusion_method: "weighted"
+  # Weights for weighted fusion
   weights:
-    neural: 1.0
-    frequency: 0.0
-    prnu: 0.0
-    provenance: 0.0
+    neural: 0.40       # Primary signal
+    frequency: 0.20    # Frequency analysis
+    metadata: 0.10     # Metadata signals
+    prnu: 0.15         # Camera fingerprint
+    provenance: 0.15   # Content credentials
 
 # Calibration Settings
 calibration:

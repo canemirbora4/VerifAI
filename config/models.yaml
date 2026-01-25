@@ -83,9 +83,33 @@ feature_extractors:
     embedding_dim: 768
     description: "Self-supervised vision features, excellent for anomaly detection"
 
-# Specialized AI Detection Models (fine-tuned)
+# Pre-trained AI Detection Models (Ready to use!)
 ai_detection_models:
-  # Placeholder for custom fine-tuned models
+  # RECOMMENDED: General AI detection
+  umm_maybe_ai_detector:
+    name: "AI Image Detector (umm-maybe)"
+    hf_model_id: "umm-maybe/AI-image-detector"
+    architecture: "vit"
+    input_size: [224, 224]
+    num_params: "86M"
+    description: "General-purpose AI vs Real detector. Best for most use cases."
+    labels: {0: "artificial", 1: "human"}
+    recommended: true
+    available: true
+    
+  # SPECIALIZED: Stable Diffusion XL detection
+  organika_sdxl_detector:
+    name: "SDXL Detector (Organika)"
+    hf_model_id: "Organika/sdxl-detector"
+    architecture: "swin"
+    input_size: [224, 224]
+    num_params: "87M"
+    description: "Specialized for Stable Diffusion XL images. May have false positives on real photos."
+    labels: {0: "artificial", 1: "human"}
+    recommended: false
+    available: true
+    
+  # Custom fine-tuned model (placeholder)
   verifai_v1:
     name: "VerifAI v1 (Custom)"
     local_path: "checkpoints/verifai_v1.safetensors"
@@ -97,20 +121,24 @@ ai_detection_models:
 selection:
   # Priority order for model selection
   priority:
-    - "verifai_v1"  # Use custom model if available
-    - "vit_base"    # Default fallback
+    - "verifai_v1"              # Use custom model if available
+    - "umm_maybe_ai_detector"   # Pre-trained AI detector (RECOMMENDED)
+    - "vit_base"                # Default fallback (needs fine-tuning)
+  
+  # Default model for AI detection
+  default_ai_detector: "umm-maybe/AI-image-detector"
   
   # Device-specific recommendations
   device_recommendations:
     cpu:
-      recommended: "convnext_tiny"
-      reason: "Efficient inference on CPU"
+      recommended: "umm_maybe_ai_detector"
+      reason: "Pre-trained, works well on CPU"
     cuda:
-      recommended: "vit_base"
-      reason: "Good balance for GPU"
+      recommended: "umm_maybe_ai_detector"
+      reason: "Pre-trained, fast on GPU"
     mps:
-      recommended: "convnext_base"
-      reason: "Optimized for Apple Silicon"
+      recommended: "umm_maybe_ai_detector"
+      reason: "Pre-trained, optimized for Apple Silicon"
 
 # Training Configuration (for future fine-tuning)
 training:

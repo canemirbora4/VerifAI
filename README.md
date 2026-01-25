@@ -222,12 +222,38 @@ See `config/default.yaml` for all available options.
 
 ### Available Models
 
-| Model | Size | Speed | Accuracy | Best For |
-|-------|------|-------|----------|----------|
-| `google/vit-base-patch16-224` | 86M | ⚡⚡⚡ | ⭐⭐⭐ | Default, balanced |
-| `google/vit-large-patch16-224` | 304M | ⚡⚡ | ⭐⭐⭐⭐ | Higher accuracy |
-| `facebook/convnext-tiny-224` | 29M | ⚡⚡⚡⚡ | ⭐⭐ | Edge deployment |
-| `facebook/convnext-base-224` | 89M | ⚡⚡⚡ | ⭐⭐⭐ | Apple Silicon |
+#### Pre-trained AI Detection Models (Recommended)
+
+These models are already trained for AI vs Real detection:
+
+| Model | Size | Trained For | Accuracy | Recommended |
+|-------|------|-------------|----------|-------------|
+| **`umm-maybe/AI-image-detector`** | 86M | General AI detection | ⭐⭐⭐⭐⭐ | ✅ **Best for general use** |
+| `Organika/sdxl-detector` | 87M | SDXL/Stable Diffusion | ⭐⭐⭐⭐ | Specialized for SDXL |
+
+**Usage:**
+```python
+from verifai import VerifAI
+
+# Recommended: General AI detection
+detector = VerifAI(model_name='umm-maybe/AI-image-detector')
+
+# Alternative: Specialized for Stable Diffusion XL
+detector = VerifAI(model_name='Organika/sdxl-detector')
+```
+
+#### Base Models (Require Fine-tuning)
+
+These are general vision models that need to be fine-tuned for AI detection:
+
+| Model | Size | Speed | Best For |
+|-------|------|-------|----------|
+| `google/vit-base-patch16-224` | 86M | ⚡⚡⚡ | Fine-tuning base |
+| `google/vit-large-patch16-224` | 304M | ⚡⚡ | Higher capacity |
+| `facebook/convnext-tiny-224` | 29M | ⚡⚡⚡⚡ | Edge deployment |
+| `facebook/convnext-base-224` | 89M | ⚡⚡⚡ | Apple Silicon |
+
+> ⚠️ **Note:** Base models output random predictions for AI detection until fine-tuned on AI vs Real data.
 
 ---
 
