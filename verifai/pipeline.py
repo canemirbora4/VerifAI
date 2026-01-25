@@ -544,10 +544,10 @@ class VerifAI:
                 # We invert it for AI probability
                 prnu_ai_prob = 1.0 - prnu_features.prnu_score
                 prnu_output = DetectorOutput(
+                    raw_score=prnu_ai_prob,
                     label=Label.AI_GENERATED if prnu_ai_prob >= self.threshold else Label.REAL,
                     confidence=abs(prnu_ai_prob - 0.5) * 2,  # Distance from uncertain
-                    ai_probability=prnu_ai_prob,
-                    evidence={"prnu_score": prnu_features.prnu_score} if return_evidence else None,
+                    evidence={"prnu_score": prnu_features.prnu_score} if return_evidence else {},
                 )
                 detector_outputs["prnu"] = prnu_output
             except Exception as e:
@@ -563,13 +563,13 @@ class VerifAI:
                 # We invert it for AI probability
                 prov_ai_prob = 1.0 - provenance_features.provenance_score
                 prov_output = DetectorOutput(
+                    raw_score=prov_ai_prob,
                     label=Label.AI_GENERATED if prov_ai_prob >= self.threshold else Label.REAL,
                     confidence=abs(prov_ai_prob - 0.5) * 2,
-                    ai_probability=prov_ai_prob,
                     evidence={
                         "has_c2pa": provenance_features.has_c2pa,
                         "is_verified": provenance_features.is_verified,
-                    } if return_evidence else None,
+                    } if return_evidence else {},
                 )
                 detector_outputs["provenance"] = prov_output
             except Exception as e:

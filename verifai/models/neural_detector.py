@@ -134,6 +134,10 @@ class NeuralDetector(BaseDetector):
                 self.model_name,
                 config=config,
             )
+            
+            # Auto-detect label mapping from model config
+            if hasattr(config, 'id2label') and config.id2label:
+                self._update_label_mapping(config.id2label)
         else:
             # Need to modify the classifier head
             logger.info(
@@ -150,6 +154,44 @@ class NeuralDetector(BaseDetector):
         
         # Load processor
         self.processor = AutoImageProcessor.from_pretrained(self.model_name)
+    
+    def _update_label_mapping(self, id2label: dict) -> None:
+        """
+        Update label mapping based on model's config.
+        
+        Handles different naming conventions:
+        - artificial/human (umm-maybe/AI-image-detector)
+        - ai/real
+        - generated/authentic
+        - fake/real
+        """
+        # Normalize labels to lowercase
+        id2label_lower = {k: v.lower() for k, v in id2label.items()}
+        
+        # Find AI label index (various names used)
+        ai_names = {'artificial', 'ai', 'generated', 'fake', 'synthetic', 'ai_generated'}
+        real_names = {'human', 'real', 'authentic', 'natural', 'photo'}
+        
+        ai_idx = None
+        real_idx = None
+        
+        for idx, label in id2label_lower.items():
+            if label in ai_names:
+                ai_idx = int(idx)
+            elif label in real_names:
+                real_idx = int(idx)
+        
+        # Update mapping if found
+        if ai_idx is not None and real_idx is not None:
+            self.class_labels = {
+                real_idx: Label.REAL.value,
+                ai_idx: Label.AI_GENERATED.value,
+            }
+            self.label_to_idx = {v: k for k, v in self.class_labels.items()}
+            logger.info(
+                f"Label mapping updated: real={real_idx}, ai={ai_idx} "
+                f"(from model config: {id2label})"
+            )
     
     def _load_local_model(self) -> None:
         """Load model from local path."""
