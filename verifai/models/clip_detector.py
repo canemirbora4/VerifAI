@@ -31,9 +31,9 @@ class ClassificationHead(nn.Module):
     """
     Trainable classification head for CLIP embeddings.
     
-    Architecture:
-        Linear(768, 512) -> ReLU -> Dropout -> 
-        Linear(512, 256) -> ReLU -> Dropout ->
+    Architecture (matches trained weights):
+        Linear(768, 512) -> LayerNorm -> GELU -> Dropout -> 
+        Linear(512, 256) -> LayerNorm -> GELU -> Dropout ->
         Linear(256, 2)
     """
     
@@ -46,21 +46,18 @@ class ClassificationHead(nn.Module):
     ):
         super().__init__()
         
-        layers = []
-        prev_dim = input_dim
-        
-        for hidden_dim in hidden_dims:
-            layers.extend([
-                nn.Linear(prev_dim, hidden_dim),
-                nn.ReLU(inplace=True),
-                nn.Dropout(dropout),
-            ])
-            prev_dim = hidden_dim
-        
-        # Final classification layer
-        layers.append(nn.Linear(prev_dim, num_classes))
-        
-        self.classifier = nn.Sequential(*layers)
+        # Architecture matching our trained model
+        self.classifier = nn.Sequential(
+            nn.Linear(input_dim, hidden_dims[0]),
+            nn.LayerNorm(hidden_dims[0]),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dims[0], hidden_dims[1]),
+            nn.LayerNorm(hidden_dims[1]),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dims[1], num_classes)
+        )
         
         # Initialize weights
         self._init_weights()
