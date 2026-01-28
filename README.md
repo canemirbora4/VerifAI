@@ -385,9 +385,13 @@ VerifAI/
 │   └── eval/                # Evaluation tools
 │       ├── metrics.py       # Performance metrics
 │       └── benchmark.py     # Dataset benchmarking
-├── models/                  # Trained model weights
+├── models/                  # Trained model weights (auto-downloaded from HF Hub)
 │   ├── modern_ai_detector.pt    # CLIP classification head
 │   └── frequency_classifier.joblib  # Frequency classifier
+├── api/                     # REST API
+│   └── server.py            # FastAPI server
+├── ui/                      # Web interface
+│   └── app.py               # Gradio application
 ├── config/                  # Configuration files
 │   └── models.yaml          # Model registry
 ├── cli/                     # Command-line interface
@@ -444,44 +448,83 @@ pytest -m "not slow"
 
 ---
 
-##  Roadmap
+## 🌐 Web Interface & API
 
-### Phase 1 Foundation
-- [x] Project scaffolding
-- [x] Image ingestion pipeline
-- [x] Neural detector (ViT)
-- [x] Basic CLI
-- [x] Evaluation metrics
+### Gradio Web UI
 
-### Phase 2 Multi-Signal Detection
-- [x] Frequency domain features (FFT/DCT)
-- [x] Ensemble fusion
-- [x] Probability calibration
-- [x] Heatmap generation
+Launch the interactive web interface:
 
-### Phase 3 Robustness Evaluation
-- [x] Corruption harness (JPEG, resize, blur)
-- [x] Robustness curves
-- [x] Benchmark reports
-- [x] Cross-generator evaluation
+```bash
+python ui/app.py
 
-### Phase 4 Video Pipeline
-- [x] Video frame extraction
-- [x] Per-frame detection
-- [x] Temporal aggregation
-- [x] Video corruption tests
+# With public link (shareable)
+python ui/app.py --share
 
-### Phase 5 Advanced Detection
-- [x] PRNU analysis
-- [x] C2PA integration
-- [x] Provenance analyzer
-- [x] Final ensemble
+# Custom port
+python ui/app.py --port 7860
+```
 
-### Phase 6 Deployment
-- [ ] FastAPI server
-- [ ] Gradio UI
-- [ ] Docker container
-- [ ] CI/CD pipeline
+Open http://localhost:7860 in your browser.
+
+**Features:**
+- Drag & drop image upload
+- Real-time detection results
+- Visual heatmap overlay
+- Confidence gauge
+- Detailed evidence breakdown
+
+### REST API (FastAPI)
+
+Start the API server:
+
+```bash
+uvicorn api.server:app --port 8000
+
+# With auto-reload for development
+uvicorn api.server:app --reload --port 8000
+```
+
+**Endpoints:**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/` | API docs (Swagger UI) |
+| `GET` | `/health` | Health check |
+| `GET` | `/info` | Model information |
+| `POST` | `/detect` | Detect image (file upload) |
+| `POST` | `/detect/url` | Detect image from URL |
+
+**Example - cURL:**
+
+```bash
+# Detect an image
+curl -X POST "http://localhost:8000/detect" \
+  -F "file=@image.jpg"
+
+# With heatmap and evidence
+curl -X POST "http://localhost:8000/detect?return_heatmap=true&return_evidence=true" \
+  -F "file=@image.jpg"
+
+# From URL
+curl -X POST "http://localhost:8000/detect/url?url=https://example.com/image.jpg"
+```
+
+**Example - Python:**
+
+```python
+import requests
+
+# Upload file
+with open("image.jpg", "rb") as f:
+    response = requests.post(
+        "http://localhost:8000/detect",
+        files={"file": f}
+    )
+
+result = response.json()
+print(f"Label: {result['label']}")
+print(f"Confidence: {result['confidence']:.1%}")
+```
 
 ---
 
