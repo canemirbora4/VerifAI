@@ -3,7 +3,34 @@
 # This file defines available models and their configurations.
 # Models can be loaded from HuggingFace Hub or local paths.
 
-# Neural Detector Models
+# ============================================================================
+# FUSION DETECTOR (DEFAULT - RECOMMENDED)
+# ============================================================================
+# The Fusion detector combines CLIP semantic features with frequency-domain
+# analysis for the best accuracy (83.0%). This is the default detector.
+
+fusion_detector:
+  name: "Fusion Detector (CLIP + Frequency)"
+  description: |
+    Combines CLIP ViT-L/14 semantic features with frequency-domain analysis.
+    Best accuracy (83.0%), catches edge cases that CLIP alone might miss.
+  components:
+    clip:
+      model: "openai/clip-vit-large-patch14"
+      head_weights: "models/modern_ai_detector.pt"
+      weight: 0.80
+    frequency:
+      model: "models/frequency_classifier.joblib"
+      weight: 0.20
+  accuracy: "83.0%"
+  recommended: true
+  default: true
+
+# ============================================================================
+# NEURAL DETECTOR MODELS (LEGACY)
+# ============================================================================
+# These models are kept for backward compatibility but FusionDetector is recommended.
+
 neural_detectors:
   # Vision Transformer (ViT) - Default
   vit_base:

@@ -1,7 +1,24 @@
 """
-Neural Detector
-================
+Neural Detector (LEGACY)
+=========================
 
+⚠️ LEGACY MODULE - Use FusionDetector instead!
+================================================
+
+This module is kept for backward compatibility only.
+For new projects, use FusionDetector which provides better accuracy (83.0% vs ~80%).
+
+Recommended usage:
+    from verifai.models import FusionDetector
+    detector = FusionDetector()
+
+Or via pipeline:
+    from verifai import VerifAI
+    detector = VerifAI()  # Uses FusionDetector by default
+
+---
+
+Original description:
 Vision Transformer (ViT) based detector for AI-generated media.
 Uses HuggingFace transformers for model loading and inference.
 """

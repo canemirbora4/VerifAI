@@ -7,14 +7,15 @@
 
 ---
 
-##  Features
+## Features
 
--  **Calibrated Confidence Scores** — Not just yes/no, but reliable probability estimates
--  **Multi-Signal Detection** — Ensemble of neural, frequency, and provenance signals
--  **Localized Evidence** — Heatmaps showing which regions triggered detection
--  **Robustness Evaluation** — Test performance under real-world transformations (JPEG, resize, etc.)
+- **Fusion Detection (83.0% accuracy)** — CLIP + Frequency ensemble for best results
+- **Calibrated Confidence Scores** — Not just yes/no, but reliable probability estimates
+- **Multi-Signal Detection** — Ensemble of neural, frequency, and provenance signals
+- **Localized Evidence** — Heatmaps showing which regions triggered detection
+- **Robustness Evaluation** — Test performance under real-world transformations (JPEG, resize, etc.)
 - **Image & Video Support** — Process both still images and video files
--  **Fast Inference** — Optimized for both CPU and GPU with FP16 support
+- **Fast Inference** — Optimized for both CPU and GPU with FP16 support
 
 ---
 
@@ -95,11 +96,12 @@ print(f"Frames analyzed: {result.num_frames_analyzed}")
 
 VerifAI uses an ensemble approach combining multiple detection signals:
 
-1. **Neural Detector** — Vision Transformer (ViT) trained to recognize AI-generated patterns
-2. **Frequency Detector** — FFT/DCT analysis of image frequency patterns
-3. **Temporal Analyzer** — Video consistency and flicker detection *(videos only)*
-4. **PRNU Detector** — Camera sensor noise fingerprint analysis *(Phase 5)*
-5. **Provenance Checker** — EXIF metadata and C2PA credential verification *(Phase 5)*
+1. **Fusion Detector (Default)** — CLIP ViT-L/14 + Frequency ensemble (83.0% accuracy)
+2. **CLIP Detector** — CLIP semantic features with trainable head (82.8% accuracy)
+3. **Frequency Detector** — FFT/DCT analysis of image frequency patterns
+4. **Temporal Analyzer** — Video consistency and flicker detection *(videos only)*
+5. **PRNU Detector** — Camera sensor noise fingerprint analysis
+6. **Provenance Checker** — EXIF metadata and C2PA credential verification
 
 ### Video Detection
 
@@ -220,40 +222,42 @@ detector = VerifAI(
 
 See `config/default.yaml` for all available options.
 
-### Available Models
+### Available Detectors
 
-#### Pre-trained AI Detection Models (Recommended)
+#### Fusion Detector (Default - Recommended)
 
-These models are already trained for AI vs Real detection:
+The Fusion Detector combines CLIP semantic features with frequency-domain analysis for the best accuracy.
 
-| Model | Size | Trained For | Accuracy | Recommended |
-|-------|------|-------------|----------|-------------|
-| **`umm-maybe/AI-image-detector`** | 86M | General AI detection | ⭐⭐⭐⭐⭐ | ✅ **Best for general use** |
-| `Organika/sdxl-detector` | 87M | SDXL/Stable Diffusion | ⭐⭐⭐⭐ | Specialized for SDXL |
+| Detector | Accuracy | Speed | Description |
+|----------|----------|-------|-------------|
+| **FusionDetector** | **83.0%** | ⚡⚡ | CLIP + Frequency ensemble (Default) |
+| CLIPDetector | 82.8% | ⚡⚡⚡ | CLIP ViT-L/14 with trained head |
+| FrequencyDetector | 67.0% | ⚡⚡⚡⚡ | FFT/DCT-based classifier |
 
 **Usage:**
 ```python
 from verifai import VerifAI
 
-# Recommended: General AI detection
-detector = VerifAI(model_name='umm-maybe/AI-image-detector')
+# Default: Fusion Detector (best accuracy)
+detector = VerifAI()
 
-# Alternative: Specialized for Stable Diffusion XL
-detector = VerifAI(model_name='Organika/sdxl-detector')
+# CLIP-only mode (faster, slightly lower accuracy)
+detector = VerifAI(use_fusion=False, use_clip=True)
+
+# Direct detector access
+from verifai.models import FusionDetector
+detector = FusionDetector()
+detector.load()
+result = detector.detect(image)
 ```
 
-#### Base Models (Require Fine-tuning)
+#### Training Details
 
-These are general vision models that need to be fine-tuned for AI detection:
+The Fusion Detector was trained on:
+- **Defactify Dataset** — Modern AI generators (SD3, SDXL, DALL-E 3, MidJourney v6)
+- **VCT² COCO_AI** — COCO images + AI-generated variants (SD3, SD3.5, SDXL, DALL-E 3, Midjourney)
 
-| Model | Size | Speed | Best For |
-|-------|------|-------|----------|
-| `google/vit-base-patch16-224` | 86M | ⚡⚡⚡ | Fine-tuning base |
-| `google/vit-large-patch16-224` | 304M | ⚡⚡ | Higher capacity |
-| `facebook/convnext-tiny-224` | 29M | ⚡⚡⚡⚡ | Edge deployment |
-| `facebook/convnext-base-224` | 89M | ⚡⚡⚡ | Apple Silicon |
-
-> ⚠️ **Note:** Base models output random predictions for AI detection until fine-tuned on AI vs Real data.
+Weights: CLIP=0.80, Frequency=0.20
 
 ---
 

@@ -26,7 +26,7 @@ from verifai.ingest import (
     get_media_type,
     MediaType,
 )
-from verifai.models import NeuralDetector, CLIPDetector, FrequencyDetector, DetectorOutput
+from verifai.models import NeuralDetector, CLIPDetector, FrequencyDetector, FusionDetector, DetectorOutput
 from verifai.models.base import Label
 from verifai.features import (
     MetadataParser,
@@ -243,30 +243,30 @@ class VerifAI:
     Main VerifAI pipeline for AI-generated media detection.
     
     This pipeline combines multiple detection signals:
-    - CLIP detector (CLIP ViT-L/14 frozen backbone + trainable head) - RECOMMENDED
+    - Fusion detector (CLIP + Frequency ensemble) - DEFAULT, RECOMMENDED
+    - CLIP detector (CLIP ViT-L/14 frozen backbone + trainable head)
     - Neural detector (legacy ViT-based, optional)
-    - Frequency detector (FFT/DCT-based)
     - Metadata analysis (EXIF/provenance)
     - PRNU analysis (camera sensor fingerprinting)
     - Provenance analysis (C2PA/Content Credentials)
     
-    The CLIP-based detector provides better cross-generator generalization
-    because CLIP is trained on 400M+ diverse internet images and captures
-    both semantic and low-level texture information without overfitting
-    to specific generator fingerprints.
+    The Fusion detector combines CLIP semantic features with frequency-domain
+    analysis for best accuracy. CLIP captures semantic patterns while frequency
+    catches edge cases that CLIP might miss.
     
     The outputs are combined via ensemble fusion and optionally calibrated.
     
     Usage:
-        >>> detector = VerifAI()  # Uses CLIP by default
+        >>> detector = VerifAI()  # Uses Fusion detector by default
         >>> result = detector.detect("image.jpg")
         >>> print(result.confidence, result.label)
         
-    With CLIP head training:
-        >>> detector = VerifAI(clip_head_path="checkpoints/clip_head.pt")
+    CLIP-only mode (faster, slightly lower accuracy):
+        >>> detector = VerifAI(use_fusion=False, use_clip=True)
         
     Legacy mode (not recommended):
         >>> detector = VerifAI(
+        ...     use_fusion=False,
         ...     use_clip=False,
         ...     model_name="umm-maybe/AI-image-detector",
         ... )
@@ -279,8 +279,9 @@ class VerifAI:
         threshold: float = 0.5,
         fp16: bool = True,
         auto_load: bool = True,
-        # CLIP vs Legacy mode
-        use_clip: bool = True,  # NEW: Use CLIP backbone (recommended)
+        # Detector mode
+        use_fusion: bool = True,  # NEW: Use Fusion detector (CLIP + Frequency) - RECOMMENDED
+        use_clip: bool = True,  # Use CLIP backbone (if not using fusion)
         clip_head_path: Optional[str] = None,  # Path to trained CLIP head weights
         # Ensemble settings
         use_frequency: bool = True,
@@ -304,9 +305,10 @@ class VerifAI:
             threshold: Classification threshold
             fp16: Use FP16 inference (faster on GPU)
             auto_load: Automatically load models on first detection
-            use_clip: Use CLIP ViT-L/14 as neural backbone (RECOMMENDED)
+            use_fusion: Use Fusion detector (CLIP + Frequency ensemble) - RECOMMENDED, best accuracy
+            use_clip: Use CLIP ViT-L/14 as neural backbone (if use_fusion=False)
             clip_head_path: Path to trained CLIP classification head weights
-            use_frequency: Enable frequency-based detection
+            use_frequency: Enable frequency-based detection (ignored if use_fusion=True)
             use_metadata: Enable metadata analysis
             use_prnu: Enable PRNU (camera sensor noise) analysis
             use_provenance: Enable C2PA/provenance analysis
@@ -319,6 +321,7 @@ class VerifAI:
         self.model_name = model_name
         self.threshold = threshold
         self.auto_load = auto_load
+        self.use_fusion = use_fusion
         self.use_clip = use_clip
         self.use_frequency = use_frequency
         self.use_metadata = use_metadata
@@ -331,8 +334,17 @@ class VerifAI:
         self._video_loader = VideoLoader()
         self._temporal_analyzer = TemporalAnalyzer()
         
-        # Neural detector - CLIP (recommended) or legacy ViT
-        if use_clip:
+        # Neural detector - Fusion (recommended), CLIP, or legacy ViT
+        if use_fusion:
+            # Fusion detector: CLIP + Frequency ensemble (best accuracy)
+            self._neural_detector = FusionDetector(
+                device=device,
+                threshold=threshold,
+            )
+            logger.info("Using FusionDetector (CLIP + Frequency ensemble) - best accuracy")
+            # Frequency is already included in FusionDetector
+            use_frequency = False
+        elif use_clip:
             # CLIP ViT-L/14 with frozen backbone + trainable head
             self._neural_detector = CLIPDetector(
                 model_name=model_name if "clip" in model_name.lower() else "openai/clip-vit-large-patch14",
@@ -340,7 +352,7 @@ class VerifAI:
                 threshold=threshold,
                 head_weights_path=clip_head_path,
             )
-            logger.info("Using CLIP ViT-L/14 detector (recommended for cross-generator generalization)")
+            logger.info("Using CLIP ViT-L/14 detector")
         else:
             # Legacy ViT-based detector
             self._neural_detector = NeuralDetector(
@@ -349,11 +361,11 @@ class VerifAI:
                 threshold=threshold,
                 fp16=fp16,
             )
-            logger.info("Using legacy NeuralDetector (consider use_clip=True for better generalization)")
+            logger.info("Using legacy NeuralDetector (consider use_fusion=True for better accuracy)")
         
-        # Frequency detector (optional)
+        # Frequency detector (optional, skipped if using FusionDetector)
         self._frequency_detector = None
-        if use_frequency:
+        if use_frequency and not use_fusion:
             self._frequency_detector = FrequencyDetector(
                 device=device,
                 threshold=threshold,
