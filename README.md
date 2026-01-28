@@ -96,12 +96,14 @@ print(f"Frames analyzed: {result.num_frames_analyzed}")
 
 VerifAI uses an ensemble approach combining multiple detection signals:
 
-1. **Fusion Detector (Default)** — CLIP ViT-L/14 + Frequency ensemble (83.0% accuracy)
-2. **CLIP Detector** — CLIP semantic features with trainable head (82.8% accuracy)
-3. **Frequency Detector** — FFT/DCT analysis of image frequency patterns
-4. **Temporal Analyzer** — Video consistency and flicker detection *(videos only)*
-5. **PRNU Detector** — Camera sensor noise fingerprint analysis
-6. **Provenance Checker** — EXIF metadata and C2PA credential verification
+**Default (Enabled):**
+1. **Fusion Detector** — CLIP ViT-L/14 + Frequency ensemble (83.0% accuracy)
+2. **Metadata Analyzer** — EXIF parsing for AI tool markers
+
+**Optional (Disabled by default):**
+3. **PRNU Detector** — Camera sensor noise fingerprint (requires reference images)
+4. **Provenance Checker** — C2PA credential verification (most images lack C2PA)
+5. **Temporal Analyzer** — Video consistency and flicker detection *(videos only)*
 
 ### Video Detection
 
@@ -430,21 +432,6 @@ pytest -m "not slow"
 - [ ] Gradio UI
 - [ ] Docker container
 - [ ] CI/CD pipeline
-
----
-
-## References
-
-### Papers
-
-- [ViT: An Image is Worth 16x16 Words](https://arxiv.org/abs/2010.11929)
-- [Detecting AI-Generated Images with Texture Patterns](https://arxiv.org/abs/2307.02289)
-- [On Calibration of Modern Neural Networks](https://arxiv.org/abs/1706.04599)
-
-### Related Projects
-
-- [HuggingFace Transformers](https://github.com/huggingface/transformers)
-- [C2PA Content Credentials](https://c2pa.org/)
 
 ---
 

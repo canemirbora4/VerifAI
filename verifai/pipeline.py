@@ -286,8 +286,8 @@ class VerifAI:
         # Ensemble settings
         use_frequency: bool = True,
         use_metadata: bool = True,
-        use_prnu: bool = True,
-        use_provenance: bool = True,
+        use_prnu: bool = False,  # Disabled by default (no impact on accuracy, 2x slower)
+        use_provenance: bool = False,  # Disabled by default (most images lack C2PA)
         fusion_method: str = "weighted",
         detector_weights: Optional[dict[str, float]] = None,
         # Calibration
@@ -310,8 +310,8 @@ class VerifAI:
             clip_head_path: Path to trained CLIP classification head weights
             use_frequency: Enable frequency-based detection (ignored if use_fusion=True)
             use_metadata: Enable metadata analysis
-            use_prnu: Enable PRNU (camera sensor noise) analysis
-            use_provenance: Enable C2PA/provenance analysis
+            use_prnu: Enable PRNU analysis (disabled by default - no accuracy impact)
+            use_provenance: Enable C2PA/provenance analysis (disabled by default - most images lack C2PA)
             fusion_method: Ensemble fusion method ("average", "weighted", "max")
             detector_weights: Custom weights for detectors
             calibration_method: Calibration method ("isotonic", "platt", None)

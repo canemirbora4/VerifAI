@@ -223,13 +223,33 @@ class FusionDetector(BaseDetector):
         # Convert tensor to PIL if needed
         if isinstance(input_data, torch.Tensor):
             if input_data.dim() == 4:
-                input_data = input_data[0]
-            # Convert CHW to HWC and to PIL
+                input_data = input_data[0]  # Remove batch dimension
+            
+            # Convert to numpy
             arr = input_data.cpu().numpy()
-            if arr.shape[0] in [1, 3]:
+            
+            # Handle CHW format (C, H, W) -> (H, W, C)
+            if arr.ndim == 3 and arr.shape[0] in [1, 3, 4]:
                 arr = arr.transpose(1, 2, 0)
-            if arr.max() <= 1.0:
-                arr = (arr * 255).astype(np.uint8)
+            
+            # Handle grayscale
+            if arr.ndim == 2:
+                arr = np.stack([arr, arr, arr], axis=-1)
+            elif arr.ndim == 3 and arr.shape[-1] == 1:
+                arr = np.concatenate([arr, arr, arr], axis=-1)
+            
+            # Denormalize if tensor was normalized with ImageNet/CLIP mean/std
+            # Check if values are outside [0, 1] range (indicates normalization)
+            if arr.dtype == np.float32 or arr.dtype == np.float64:
+                if arr.min() < 0 or arr.max() > 1.5:
+                    # Denormalize with ImageNet/CLIP mean and std
+                    mean = np.array([0.485, 0.456, 0.406])
+                    std = np.array([0.229, 0.224, 0.225])
+                    arr = arr * std + mean
+                
+                # Convert to 0-255 uint8
+                arr = (arr * 255).clip(0, 255).astype(np.uint8)
+            
             image = Image.fromarray(arr).convert("RGB")
         else:
             image = input_data.convert("RGB")
