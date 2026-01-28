@@ -93,8 +93,8 @@ print(f"Frames analyzed: {result.num_frames_analyzed}")
 ```python
 from verifai import VerifAI
 
-# Enable heatmap generation
-detector = VerifAI(generate_heatmaps=True)
+# Heatmaps are enabled by default
+detector = VerifAI()
 
 # Get detection with evidence
 result = detector.detect("image.jpg", return_evidence=True)
@@ -107,6 +107,9 @@ if result.heatmap is not None:
 # Access detailed evidence
 print(result.evidence)
 # {'neural': {'clip_score': 0.99, 'frequency_score': 0.38, ...}}
+
+# Disable heatmaps for faster inference
+fast_detector = VerifAI(generate_heatmaps=False)
 ```
 
 ---

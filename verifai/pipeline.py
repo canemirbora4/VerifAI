@@ -294,7 +294,7 @@ class VerifAI:
         calibration_method: Optional[str] = None,
         calibration_path: Optional[str] = None,
         # Explainability
-        generate_heatmaps: bool = False,
+        generate_heatmaps: bool = True,  # Heatmaps enabled by default
     ):
         """
         Initialize the VerifAI pipeline.
