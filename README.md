@@ -155,9 +155,9 @@ print(f"Frames analyzed: {result.num_frames_analyzed}")
 print(f"Temporal consistency: {result.temporal_consistency:.1%}")
 
 # Per-frame scores
-for frame_score in result.frame_scores:
-    if frame_score.is_suspicious:
-        print(f"  Frame {frame_score.frame_number} @ {frame_score.timestamp:.2f}s: {frame_score.score:.1%}")
+for fs in result.frame_scores:
+    if fs.is_suspicious:
+        print(f"  Frame {fs.frame_number} @ {fs.timestamp:.2f}s: {fs.score:.1%}")
 
 # Suspicious frame indices
 if result.suspicious_frames:
@@ -249,11 +249,14 @@ from verifai import VerifAI
 
 # Custom configuration
 detector = VerifAI(
-    model_name="google/vit-large-patch16-224",  # Larger model
-    device="cuda",                               # Force GPU
-    threshold=0.6,                               # Higher threshold
-    fp16=True,                                   # Enable FP16
+    device="cuda",                    # Force GPU (auto-detects by default)
+    threshold=0.6,                    # Higher threshold (default: 0.5)
+    generate_heatmaps=False,          # Disable for faster inference
+    use_metadata=False,               # Disable metadata analysis
 )
+
+# CLIP-only mode (no frequency fusion)
+detector = VerifAI(use_fusion=False, use_clip=True)
 ```
 
 See `config/default.yaml` for all available options.
@@ -274,11 +277,12 @@ The Fusion Detector combines CLIP semantic features with frequency-domain analys
 ```python
 from verifai import VerifAI
 
-# Default: Fusion Detector (best accuracy)
+# Default: Fusion Detector (best accuracy, includes heatmaps)
 detector = VerifAI()
+result = detector.detect("image.jpg")
 
-# CLIP-only mode (faster, slightly lower accuracy)
-detector = VerifAI(use_fusion=False, use_clip=True)
+# Fast mode (no heatmaps)
+detector = VerifAI(generate_heatmaps=False)
 
 # Direct detector access
 from verifai.models import FusionDetector
@@ -356,26 +360,35 @@ print(metrics.summary())
 VerifAI/
 ├── verifai/                 # Main package
 │   ├── __init__.py          # Package exports
-│   ├── pipeline.py          # Main detection pipeline
+│   ├── pipeline.py          # Main detection pipeline (VerifAI class)
 │   ├── ingest/              # Media loading
 │   │   ├── image_loader.py  # Image preprocessing
+│   │   ├── video_loader.py  # Video frame extraction
 │   │   └── utils.py         # File utilities
 │   ├── models/              # Detection models
 │   │   ├── base.py          # Abstract interfaces
-│   │   └── neural_detector.py # ViT-based detector
-│   ├── eval/                # Evaluation tools
-│   │   └── metrics.py       # Performance metrics
-│   ├── features/            # Feature extractors (Phase 2+)
-│   └── fusion/              # Ensemble methods (Phase 2+)
-├── cli/                     # Command-line interface
-│   └── main.py              # CLI commands
+│   │   ├── fusion_detector.py  # CLIP + Frequency ensemble (DEFAULT)
+│   │   ├── clip_detector.py    # CLIP ViT-L/14 detector
+│   │   └── neural_detector.py  # Legacy ViT-based detector
+│   ├── features/            # Feature extractors
+│   │   ├── frequency.py     # FFT/DCT analysis
+│   │   ├── prnu.py          # Camera fingerprint
+│   │   ├── provenance.py    # C2PA/metadata
+│   │   └── temporal.py      # Video temporal analysis
+│   ├── fusion/              # Ensemble & explainability
+│   │   ├── ensemble.py      # Multi-signal fusion
+│   │   ├── calibration.py   # Probability calibration
+│   │   └── explainer.py     # Heatmap generation
+│   └── eval/                # Evaluation tools
+│       ├── metrics.py       # Performance metrics
+│       └── benchmark.py     # Dataset benchmarking
+├── models/                  # Trained model weights
+│   ├── modern_ai_detector.pt    # CLIP classification head
+│   └── frequency_classifier.joblib  # Frequency classifier
 ├── config/                  # Configuration files
-│   ├── default.yaml         # Default settings
 │   └── models.yaml          # Model registry
-├── tests/                   # Test suite
-├── api/                     # REST API (Phase 6)
-├── ui/                      # Web interface (Phase 6)
-└── pyproject.toml           # Dependencies
+├── cli/                     # Command-line interface
+└── tests/                   # Test suite
 ```
 
 ---
