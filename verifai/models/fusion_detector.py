@@ -123,6 +123,11 @@ class FusionDetector(BaseDetector):
             f"clip_weight={self.clip_weight:.2f}, freq_weight={self.freq_weight:.2f}"
         )
     
+    @property
+    def model(self) -> torch.nn.Module:
+        """Return the CLIP model for heatmap generation."""
+        return self.clip_model
+    
     def load(self) -> None:
         """Load all models."""
         if self._is_loaded:

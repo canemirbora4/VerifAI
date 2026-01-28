@@ -148,7 +148,16 @@ class GradCAM:
         
         # Forward pass
         self.model.eval()
-        output = self.model(input_tensor)
+        
+        # Handle different model APIs (CLIP uses pixel_values)
+        if hasattr(self.model, 'get_image_features'):
+            # CLIP model - need special handling
+            output = self.model.get_image_features(pixel_values=input_tensor)
+            # For CLIP, we need to use the vision model directly
+            # Return early with simple heatmap based on activations
+            return self._simple_activation_heatmap(input_tensor)
+        else:
+            output = self.model(input_tensor)
         
         # Get logits
         if hasattr(output, 'logits'):
@@ -221,6 +230,49 @@ class GradCAM:
         input_tensor.requires_grad = original_requires_grad
         
         return cam
+    
+    def _simple_activation_heatmap(self, input_tensor: torch.Tensor) -> np.ndarray:
+        """Generate simple heatmap for CLIP using activations."""
+        if self._activations is None:
+            return np.ones((input_tensor.shape[2], input_tensor.shape[3])) * 0.5
+        
+        act = self._activations
+        
+        # CLIP vision transformer outputs (B, N, C) where N = patches + CLS
+        if act.dim() == 3:
+            act = act[0]  # Remove batch
+            
+            # Remove CLS token (first position)
+            if act.shape[0] in [197, 257]:  # 14x14+1 or 16x16+1
+                act = act[1:]
+            
+            # Compute activation magnitude per patch
+            patch_scores = act.norm(dim=1)  # (N,)
+            
+            # Reshape to grid
+            grid_size = int(np.sqrt(len(patch_scores)))
+            try:
+                heatmap = patch_scores.reshape(grid_size, grid_size)
+            except:
+                heatmap = torch.ones(14, 14, device=input_tensor.device) * 0.5
+        else:
+            heatmap = act.mean(dim=1)[0]  # Average channels
+        
+        # Normalize
+        heatmap = heatmap - heatmap.min()
+        if heatmap.max() > 0:
+            heatmap = heatmap / heatmap.max()
+        
+        # Resize to input size
+        heatmap = heatmap.unsqueeze(0).unsqueeze(0)
+        heatmap = F.interpolate(
+            heatmap.float(),
+            size=(input_tensor.shape[2], input_tensor.shape[3]),
+            mode='bilinear',
+            align_corners=False,
+        )
+        
+        return heatmap.squeeze().cpu().numpy()
     
     def cleanup(self) -> None:
         """Remove hooks."""
@@ -314,15 +366,88 @@ class Explainer:
         model: torch.nn.Module,
         input_tensor: torch.Tensor,
     ) -> np.ndarray:
-        """Generate GradCAM heatmap."""
+        """Generate heatmap using frequency-based analysis."""
         try:
-            gradcam = GradCAM(model)
-            heatmap = gradcam.generate(input_tensor, target_class=1)  # AI class
-            gradcam.cleanup()
-            return heatmap
+            # Use frequency-based approach which is more reliable for our use case
+            return self._frequency_heatmap(input_tensor)
+            
         except Exception as e:
-            logger.warning(f"GradCAM failed: {e}")
+            logger.warning(f"Heatmap generation failed: {e}")
             return np.ones((224, 224)) * 0.5
+    
+    def _frequency_heatmap(self, input_tensor: torch.Tensor) -> np.ndarray:
+        """Generate heatmap based on frequency analysis - detects AI artifacts."""
+        import numpy as np
+        from PIL import Image
+        
+        if input_tensor.dim() == 4:
+            input_tensor = input_tensor[0]
+        
+        # Convert to numpy array
+        arr = input_tensor.cpu().numpy()
+        
+        # Denormalize if needed
+        if arr.min() < 0 or arr.max() > 1.5:
+            mean = np.array([0.485, 0.456, 0.406]).reshape(3, 1, 1)
+            std = np.array([0.229, 0.224, 0.225]).reshape(3, 1, 1)
+            arr = arr * std + mean
+        
+        # Convert CHW to HWC and to grayscale
+        if arr.shape[0] == 3:
+            arr = arr.transpose(1, 2, 0)
+        gray = np.mean(arr, axis=2)
+        
+        # Apply FFT
+        f = np.fft.fft2(gray)
+        fshift = np.fft.fftshift(f)
+        magnitude = np.log(np.abs(fshift) + 1)
+        
+        # Create heatmap based on high-frequency anomalies
+        # AI-generated images often have unusual frequency patterns
+        h, w = magnitude.shape
+        
+        # Create radial distance mask
+        y, x = np.ogrid[:h, :w]
+        center = (h // 2, w // 2)
+        r = np.sqrt((x - center[1])**2 + (y - center[0])**2)
+        
+        # Weight by distance from center (high frequencies)
+        # AI artifacts often appear in mid-to-high frequency range
+        weight = np.exp(-((r - h*0.3)**2) / (2 * (h*0.15)**2))
+        
+        # Weighted magnitude (emphasize mid-high frequencies)
+        weighted_mag = magnitude * weight
+        
+        # Inverse FFT to get spatial heatmap of artifacts
+        # Threshold to find anomalies
+        threshold = np.percentile(weighted_mag, 90)
+        anomaly_mask = weighted_mag > threshold
+        
+        # Convert back to spatial domain with anomalies highlighted
+        anomaly_freq = fshift * anomaly_mask
+        anomaly_spatial = np.abs(np.fft.ifft2(np.fft.ifftshift(anomaly_freq)))
+        
+        # Normalize
+        heatmap = anomaly_spatial
+        heatmap = heatmap - heatmap.min()
+        if heatmap.max() > 0:
+            heatmap = heatmap / heatmap.max()
+        
+        # Smooth with Gaussian-like blur (simple convolution)
+        kernel_size = 5
+        kernel = np.ones((kernel_size, kernel_size)) / (kernel_size * kernel_size)
+        from scipy import ndimage
+        try:
+            heatmap = ndimage.convolve(heatmap, kernel)
+        except:
+            pass  # If scipy not available, use raw heatmap
+        
+        # Normalize again
+        heatmap = heatmap - heatmap.min()
+        if heatmap.max() > 0:
+            heatmap = heatmap / heatmap.max()
+        
+        return heatmap
     
     def _attention_heatmap(
         self,

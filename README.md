@@ -88,6 +88,27 @@ print(f"Suspicious frames: {result.suspicious_frames}")
 print(f"Frames analyzed: {result.num_frames_analyzed}")
 ```
 
+**With Heatmaps & Evidence:**
+
+```python
+from verifai import VerifAI
+
+# Enable heatmap generation
+detector = VerifAI(generate_heatmaps=True)
+
+# Get detection with evidence
+result = detector.detect("image.jpg", return_evidence=True)
+
+# Access heatmap (numpy array showing suspicious regions)
+if result.heatmap is not None:
+    print(f"Heatmap shape: {result.heatmap.shape}")
+    # Red = suspicious, Blue = normal
+    
+# Access detailed evidence
+print(result.evidence)
+# {'neural': {'clip_score': 0.99, 'frequency_score': 0.38, ...}}
+```
+
 ---
 
 ## Documentation
