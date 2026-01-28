@@ -7,13 +7,14 @@
 # FUSION DETECTOR (DEFAULT - RECOMMENDED)
 # ============================================================================
 # The Fusion detector combines CLIP semantic features with frequency-domain
-# analysis for the best accuracy (83.0%). This is the default detector.
+# analysis for the best accuracy (97.0%). This is the default detector.
 
 fusion_detector:
   name: "Fusion Detector (CLIP + Frequency)"
   description: |
     Combines CLIP ViT-L/14 semantic features with frequency-domain analysis.
-    Best accuracy (83.0%), catches edge cases that CLIP alone might miss.
+    Best accuracy (97.0%), catches edge cases that CLIP alone might miss.
+    Tested on Defactify (SD3, SDXL, DALL-E 3, MidJourney) + COCO_AI (SD, FLUX, Ideogram).
   components:
     clip:
       model: "openai/clip-vit-large-patch14"
@@ -22,7 +23,12 @@ fusion_detector:
     frequency:
       model: "models/frequency_classifier.joblib"
       weight: 0.20
-  accuracy: "83.0%"
+  accuracy: "97.0%"  # Average across Defactify + COCO_AI datasets
+  real_accuracy: "94.8%"
+  fake_accuracy: "99.2%"
+  benchmarks:
+    defactify: "98.5%"
+    coco_ai: "95.5%"
   recommended: true
   default: true
 

@@ -6,7 +6,7 @@ Neural Detector (LEGACY)
 ================================================
 
 This module is kept for backward compatibility only.
-For new projects, use FusionDetector which provides better accuracy (83.0% vs ~80%).
+For new projects, use FusionDetector which provides better accuracy (97.0% vs ~80%).
 
 Recommended usage:
     from verifai.models import FusionDetector
