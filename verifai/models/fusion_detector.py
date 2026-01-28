@@ -8,6 +8,9 @@ for improved AI-generated image detection.
 Optimal weights determined through testing:
 - CLIP: 0.80 (primary signal)
 - Frequency: 0.20 (supporting signal for edge cases)
+
+Model weights are automatically downloaded from Hugging Face Hub
+if not found locally: https://huggingface.co/canemirbora/verifai-models
 """
 
 from typing import Optional, Tuple
@@ -24,6 +27,49 @@ from loguru import logger
 
 from verifai.models.base import BaseDetector, DetectorOutput, Label
 from verifai.features.frequency import FrequencyExtractor
+
+# Hugging Face Hub repo for model weights
+HF_REPO_ID = "canemirbora/verifai-models"
+
+
+def download_model_from_hub(filename: str, local_path: Path) -> str:
+    """
+    Download model file from Hugging Face Hub if not exists locally.
+    
+    Args:
+        filename: Name of the file in the HF repo
+        local_path: Local path to save the file
+        
+    Returns:
+        Path to the model file (local or cached)
+    """
+    # If local file exists, use it
+    if local_path.exists():
+        logger.debug(f"Using local model: {local_path}")
+        return str(local_path)
+    
+    # Try to download from Hugging Face Hub
+    try:
+        from huggingface_hub import hf_hub_download
+        
+        logger.info(f"Downloading {filename} from Hugging Face Hub...")
+        cached_path = hf_hub_download(
+            repo_id=HF_REPO_ID,
+            filename=filename,
+            cache_dir=local_path.parent / ".hf_cache",
+        )
+        logger.info(f"Downloaded to: {cached_path}")
+        return cached_path
+        
+    except ImportError:
+        raise ImportError(
+            "huggingface_hub not installed. Install with: pip install huggingface_hub"
+        )
+    except Exception as e:
+        raise FileNotFoundError(
+            f"Model file '{filename}' not found locally at {local_path} "
+            f"and failed to download from HF Hub ({HF_REPO_ID}): {e}"
+        )
 
 
 class CLIPClassificationHead(nn.Module):
@@ -129,11 +175,21 @@ class FusionDetector(BaseDetector):
         return self.clip_model
     
     def load(self) -> None:
-        """Load all models."""
+        """Load all models (downloads from HF Hub if not found locally)."""
         if self._is_loaded:
             return
         
         logger.info("Loading FusionDetector models...")
+        
+        # Resolve model paths (download from HF Hub if needed)
+        clip_head_path = download_model_from_hub(
+            "modern_ai_detector.pt", 
+            Path(self.clip_model_path)
+        )
+        freq_model_path = download_model_from_hub(
+            "frequency_classifier.joblib",
+            Path(self.freq_model_path)
+        )
         
         # Load CLIP
         try:
@@ -146,10 +202,10 @@ class FusionDetector(BaseDetector):
             
             self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
             
-            logger.info(f"Loading CLIP head from {self.clip_model_path}...")
+            logger.info(f"Loading CLIP head from {clip_head_path}...")
             self.clip_head = CLIPClassificationHead()
             self.clip_head.load_state_dict(
-                torch.load(self.clip_model_path, map_location=self._device)
+                torch.load(clip_head_path, map_location=self._device, weights_only=True)
             )
             self.clip_head.to(self._device)
             self.clip_head.eval()
@@ -160,8 +216,8 @@ class FusionDetector(BaseDetector):
         
         # Load Frequency classifier
         try:
-            logger.info(f"Loading frequency classifier from {self.freq_model_path}...")
-            self.freq_classifier = joblib.load(self.freq_model_path)
+            logger.info(f"Loading frequency classifier from {freq_model_path}...")
+            self.freq_classifier = joblib.load(freq_model_path)
             
             self.freq_extractor = FrequencyExtractor(
                 image_size=(256, 256),

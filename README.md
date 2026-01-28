@@ -4,6 +4,7 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Hugging Face](https://img.shields.io/badge/🤗%20Models-canemirbora/verifai--models-yellow)](https://huggingface.co/canemirbora/verifai-models)
 
 ---
 
@@ -38,6 +39,8 @@ pip install -e .
 # Or with all optional dependencies
 pip install -e ".[all]"
 ```
+
+**Model Weights:** Pre-trained model weights (~3MB) are automatically downloaded from [Hugging Face Hub](https://huggingface.co/canemirbora/verifai-models) on first use. No manual download required.
 
 ### Basic Usage
 

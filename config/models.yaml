@@ -1,7 +1,17 @@
 # VerifAI Model Registry
 # =========================
 # This file defines available models and their configurations.
-# Models can be loaded from HuggingFace Hub or local paths.
+# Model weights are automatically downloaded from Hugging Face Hub on first use.
+
+# ============================================================================
+# MODEL WEIGHTS REPOSITORY
+# ============================================================================
+huggingface_hub:
+  repo_id: "canemirbora/verifai-models"
+  url: "https://huggingface.co/canemirbora/verifai-models"
+  files:
+    - "modern_ai_detector.pt"      # CLIP classification head (2.0 MB)
+    - "frequency_classifier.joblib" # Frequency classifier (774 KB)
 
 # ============================================================================
 # FUSION DETECTOR (DEFAULT - RECOMMENDED)
@@ -15,13 +25,14 @@ fusion_detector:
     Combines CLIP ViT-L/14 semantic features with frequency-domain analysis.
     Best accuracy (97.0%), catches edge cases that CLIP alone might miss.
     Tested on Defactify (SD3, SDXL, DALL-E 3, MidJourney) + COCO_AI (SD, FLUX, Ideogram).
+    Weights auto-downloaded from HF Hub: canemirbora/verifai-models
   components:
     clip:
       model: "openai/clip-vit-large-patch14"
-      head_weights: "models/modern_ai_detector.pt"
+      head_weights: "modern_ai_detector.pt"  # Downloaded from HF Hub
       weight: 0.80
     frequency:
-      model: "models/frequency_classifier.joblib"
+      model: "frequency_classifier.joblib"   # Downloaded from HF Hub
       weight: 0.20
   accuracy: "97.0%"  # Average across Defactify + COCO_AI datasets
   real_accuracy: "94.8%"
